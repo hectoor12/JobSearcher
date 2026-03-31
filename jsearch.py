@@ -37,7 +37,7 @@ def guardar_trabajo(job_id, oferta):
         "fecha_registro": firestore.SERVER_TIMESTAMP
     })
 
-# --- 1. BÚSQUEDA (5 PÁGINAS / ÚLTIMA SEMANA) ---
+# --- 1. BÚSQUEDA (SOLO PÁGINA 1) ---
 def buscar_trabajos():
     url = "https://jsearch.p.rapidapi.com/search"
     headers = {
@@ -47,43 +47,37 @@ def buscar_trabajos():
     
     ofertas_totales = []
 
-    # He añadido el bucle para las 5 páginas que mencionas
-    for pagina in range(1, 6):
-        params = {
-            "query": 'pentester OR "red team" OR "blue team" OR hacking OR ciberseguridad OR cybersecurity OR penetration in Madrid, Spain',
-            "page": str(pagina),
-            "num_pages": "1",
-            "date_posted": "week", 
-            "country": "es",
-            "radius": "50"
-        }
+    # Configuración para una sola petición (Página 1)
+    params = {
+        "query": 'pentester OR "red team" OR "blue team" OR hacking OR ciberseguridad OR cybersecurity OR penetration in Madrid, Spain',
+        "page": "1",
+        "num_pages": "1",
+        "date_posted": "week", 
+        "country": "es",
+        "radius": "50"
+    }
 
-        try:
-            response = requests.get(url, headers=headers, params=params)
-            if response.status_code == 200:
-                data = response.json().get("data", [])
-                if not data:
-                    print(f"✅ No hay más resultados en la página {pagina}.")
-                    break
-                
-                print(f"📦 Página {pagina}: {len(data)} ofertas encontradas.")
-                for j in data:
-                    ofertas_totales.append({
-                        "id": j.get("job_id"),
-                        "titulo": j.get("job_title", ""),
-                        "empresa": j.get("employer_name", "Empresa oculta"),
-                        "ubicacion": f"{j.get('job_city', '')}, {j.get('job_state', '')}",
-                        "descripcion": j.get("job_description", ""),
-                        "enlace": j.get("job_apply_link"),
-                        "plataforma": j.get("job_publisher", "JSearch"),
-                        "es_remoto": j.get("job_is_remote", False)
-                    })
-            else:
-                print(f"❌ Error API pág {pagina}: {response.status_code}")
-                break
-        except Exception as e:
-            print(f"❌ Error en petición: {e}")
-            break
+    try:
+        response = requests.get(url, headers=headers, params=params)
+        if response.status_code == 200:
+            data = response.json().get("data", [])
+            print(f"📦 Página 1: {len(data)} ofertas encontradas.")
+            
+            for j in data:
+                ofertas_totales.append({
+                    "id": j.get("job_id"),
+                    "titulo": j.get("job_title", ""),
+                    "empresa": j.get("employer_name", "Empresa oculta"),
+                    "ubicacion": f"{j.get('job_city', '')}, {j.get('job_state', '')}",
+                    "descripcion": j.get("job_description", ""),
+                    "enlace": j.get("job_apply_link"),
+                    "plataforma": j.get("job_publisher", "JSearch"),
+                    "es_remoto": j.get("job_is_remote", False)
+                })
+        else:
+            print(f"❌ Error API: {response.status_code} - {response.text}")
+    except Exception as e:
+        print(f"❌ Error en petición: {e}")
             
     return ofertas_totales
 
@@ -94,7 +88,7 @@ def filtrar_ofertas(ofertas):
 
     for oferta in ofertas:
         titulo_low = oferta["titulo"].lower()
-        # Verificamos si alguna palabra prohibida está en el título
+        # Filtro simple por palabras prohibidas
         es_senior = any(word in titulo_low.split() for word in palabras_prohibidas)
         
         if not es_senior and oferta["enlace"]:
@@ -107,24 +101,34 @@ def filtrar_ofertas(ofertas):
 def enviar_oferta_telegram(oferta):
     url = f"https://api.telegram.org/bot{TELEGRAM_TOKEN}/sendMessage"
     
-    texto = f"🚨 <b>Nueva Vacante:</b> {html.escape(oferta['titulo'])}\n"
+    texto = f"🚨 <b>Nueva Oferta:</b> {html.escape(oferta['titulo'])}\n"
     texto += f"🏢 <b>Empresa:</b> {html.escape(oferta['empresa'])}\n"
     texto += f"📍 <b>Ubicación:</b> {html.escape(oferta['ubicacion'])}\n"
     texto += f"🛠️ <b>Modalidad:</b> {oferta['modalidad']}\n"
-    texto += f"🌐 <b>Vía:</b> {html.escape(oferta['plataforma'])}\n\n"
-    texto += f"🔗 <a href='{html.escape(oferta['enlace'])}'>¡Aplicar ya!</a>"
+    texto += f"🌐 <b>Plataforma:</b> {html.escape(oferta['plataforma'])}\n\n"
+    texto += f"🔗 <a href='{html.escape(oferta['enlace'])}'>Haz clic aquí para aplicar</a>"
     
     payload = {
         "chat_id": CHAT_ID,
         "text": texto,
         "parse_mode": "HTML",
-        "disable_web_page_preview": False
+        "reply_markup": {
+            "inline_keyboard": [
+                [{"text": "🔗 Ver Oferta", "url": oferta['enlace']}],
+                [
+                    {"text": "✅ Aceptar", "callback_data": "aceptar"},
+                    {"text": "❌ Rechazar", "callback_data": "rechazar"}
+                ]
+            ]
+        }
     }
     
     try:
-        requests.post(url, json=payload)
+        r = requests.post(url, json=payload)
+        if r.status_code != 200:
+            print(f"❌ Error Telegram ({r.status_code}): {r.text}")
     except Exception as e:
-        print(f"Error Telegram: {e}")
+        print(f"Error enviando a Telegram: {e}")
 
 # --- EJECUCIÓN ---
 if __name__ == "__main__":
