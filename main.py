@@ -140,26 +140,7 @@ def enviar_oferta_telegram(oferta):
 # --- EJECUCIÓN DEL SCRIPT ---
 if __name__ == "__main__":
     if not SERPAPI_KEY or not TELEGRAM_TOKEN or not CHAT_ID:
-        print("¡ERROR! Faltan variables de entorno. Revisa tus Secrets en GitHub.")
-    else:
-        todas_las_ofertas = buscar_trabajos()
-        ofertas_filtradas = filtrar_ofertas(todas_las_ofertas)
-        
-        print(f"Enviando {len(ofertas_filtradas)} ofertas válidas a Telegram...")
-        
-        for trabajo in ofertas_filtradas:
-            enviar_oferta_telegram(trabajo)    
-            try:
-        respuesta = requests.post(url, data=payload)
-        respuesta.raise_for_status()
-        print(f"Mensaje enviado con éxito: {oferta['titulo']}")
-    except Exception as e:
-        print(f"Error al enviar a Telegram ({oferta['titulo']}): {e}")
-
-# --- EJECUCIÓN DEL SCRIPT ---
-if __name__ == "__main__":
-    if not SERPAPI_KEY or not TELEGRAM_TOKEN or not CHAT_ID:
-        print("¡ERROR! Faltan variables de entorno. Revisa tus Secrets en GitHub.")
+        print("¡ERROR! Faltan variables de entorno. Revisa tus Secrets en GitHub o configuración local.")
     else:
         todas_las_ofertas = buscar_trabajos()
         ofertas_filtradas = filtrar_ofertas(todas_las_ofertas)
