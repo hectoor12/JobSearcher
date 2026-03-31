@@ -196,4 +196,4 @@ if __name__ == "__main__":
         else:
             print("No se encontraron ofertas en la búsqueda.")
     else:
-        print("Error: Faltan variables de entorno (SERPAPI_KEY, TELEGRAM_TOKEN o TELEGRAM
+        print("Error: Faltan variables de entorno (SERPAPI_KEY, TELEGRAM_TOKEN o TELEGRAM_CHAT_ID)")
