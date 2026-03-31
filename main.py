@@ -82,17 +82,21 @@ def enviar_oferta_telegram(oferta):
     texto += f"🌐 <b>Plataforma:</b> {html.escape(oferta['plataforma'])}\n\n"
     texto += f"🔗 <a href='{html.escape(oferta['enlace'])}'>Haz clic aquí para aplicar</a>"
     
-    payload = {
+payload = {
         "chat_id": CHAT_ID,
         "text": texto,
         "parse_mode": "HTML",
         "reply_markup": {
-            "inline_keyboard": [[
-                # Simplificamos el botón a un enlace directo para que sea funcional
-                {"text": "✅ Ver y Aplicar", "url": oferta['enlace']}
-            ]]
+            "inline_keyboard": [
+                [{"text": "🔗 Ver Oferta", "url": oferta['enlace']}], # Enlace directo
+                [
+                    {"text": "✅ Aceptar", "callback_data": "aceptar"},
+                    {"text": "❌ Rechazar", "callback_data": "rechazar"}
+                ]
+            ]
         }
     }
+    requests.post(url, json=payload
     
     try:
         requests.post(url, json=payload)
