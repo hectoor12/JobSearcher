@@ -148,7 +148,8 @@ if __name__ == "__main__":
         print(f"Enviando {len(ofertas_filtradas)} ofertas válidas a Telegram...")
         
         for trabajo in ofertas_filtradas:
-            enviar_oferta_telegram(trabajo)    try:
+            enviar_oferta_telegram(trabajo)    
+            try:
         respuesta = requests.post(url, data=payload)
         respuesta.raise_for_status()
         print(f"Mensaje enviado con éxito: {oferta['titulo']}")
