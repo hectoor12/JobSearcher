@@ -57,11 +57,8 @@ def filtrar_ofertas(ofertas):
         en_zona = any(ciudad in ubicacion or ciudad in descripcion for ciudad in ciudades_permitidas)
         es_flexible = any(kw in descripcion or kw in ubicacion for kw in keywords_flexibilidad)
         
-        # Filtramos: Solo descartamos si es Senior o no es en la zona. 
-        # La flexibilidad ya no es excluyente.
         if not es_senior and en_zona:
             if oferta["enlace"]:
-                # Añadimos la etiqueta visual para Telegram
                 if es_flexible:
                     oferta["modalidad"] = "🏠 Remoto / Híbrido"
                 else:
@@ -82,13 +79,13 @@ def enviar_oferta_telegram(oferta):
     texto += f"🌐 <b>Plataforma:</b> {html.escape(oferta['plataforma'])}\n\n"
     texto += f"🔗 <a href='{html.escape(oferta['enlace'])}'>Haz clic aquí para aplicar</a>"
     
-payload = {
+    payload = {
         "chat_id": CHAT_ID,
         "text": texto,
         "parse_mode": "HTML",
         "reply_markup": {
             "inline_keyboard": [
-                [{"text": "🔗 Ver Oferta", "url": oferta['enlace']}], # Enlace directo
+                [{"text": "🔗 Ver Oferta", "url": oferta['enlace']}],
                 [
                     {"text": "✅ Aceptar", "callback_data": "aceptar"},
                     {"text": "❌ Rechazar", "callback_data": "rechazar"}
@@ -96,12 +93,11 @@ payload = {
             ]
         }
     }
-    requests.post(url, json=payload
     
     try:
         requests.post(url, json=payload)
-    except Exception:
-        pass
+    except Exception as e:
+        print(f"Error enviando a Telegram: {e}")
 
 # --- EJECUCIÓN ---
 if __name__ == "__main__":
@@ -111,10 +107,11 @@ if __name__ == "__main__":
         if todas:
             filtradas = filtrar_ofertas(todas)
             
-            # Sistema de control para evitar enviar la misma oferta dos veces en la misma ejecución
             vistas = set()
             for trabajo in filtradas:
                 id_unico = f"{trabajo['titulo']}{trabajo['empresa']}".lower()
                 if id_unico not in vistas:
                     enviar_oferta_telegram(trabajo)
                     vistas.add(id_unico)
+    else:
+        print("Error: Faltan variables de entorno (API Keys o Chat ID)")
