@@ -1,7 +1,7 @@
 import os
 import requests
 import json
-import html # Añadimos esta librería nativa para evitar errores con caracteres especiales en Telegram
+import html
 
 # Cargamos las variables de entorno
 SERPAPI_KEY = os.environ.get("SERPAPI_KEY")
@@ -33,6 +33,7 @@ def buscar_trabajos():
 def filtrar_ofertas(ofertas):
     ofertas_validas = []
     
+    # Listas de control
     palabras_prohibidas = ["senior", "sr", "lead", "principal", "manager", "director", "architect", "arquitecto", "expert"]
     keywords_flexibilidad = ["remoto", "remote", "híbrido", "hibrido", "hybrid", "teletrabajo"]
     ciudades_permitidas = ["madrid", "alcobendas", "pozuelo", "las rozas", "getafe", "leganés"]
@@ -49,24 +50,40 @@ def filtrar_ofertas(ofertas):
         
         if not es_senior and en_zona and es_flexible:
             
-            # --- EXTRACCIÓN DEL ENLACE ---
+            # --- EXTRACCIÓN Y LIMPIEZA DEL ENLACE ---
             enlace_final = None
-            opciones_aplicar = oferta.get("apply_options", [])
-            links_relacionados = oferta.get("related_links", [])
             
-            if opciones_aplicar:
-                enlace_final = opciones_aplicar[0].get("link")
-            elif links_relacionados:
-                enlace_final = links_relacionados[0].get("link")
-            else:
-                enlace_final = oferta.get("share_link")
+            # Prioridad 1: Enlace directo a la plataforma (LinkedIn, InfoJobs, etc.)
+            opciones_aplicar = oferta.get("apply_options", [])
+            for opcion in opciones_aplicar:
+                link = opcion.get("link", "")
+                if link and "google.com/search" not in link:
+                    enlace_final = link
+                    break
+                    
+            # Prioridad 2: Enlaces relacionados sin basura de Google
+            if not enlace_final:
+                links_relacionados = oferta.get("related_links", [])
+                for rel in links_relacionados:
+                    link = rel.get("link", "")
+                    if link and "google.com/search" not in link:
+                        enlace_final = link
+                        break
+
+            # Prioridad 3: Fabricamos enlace corto y limpio de Google Jobs con el ID
+            if not enlace_final:
+                job_id = oferta.get("job_id")
+                if job_id:
+                    enlace_final = f"https://www.google.com/search?htivrt=jobs&htidocid={job_id}"
+                else:
+                    enlace_final = oferta.get("share_link", "Enlace no disponible")
 
             # --- EXTRACCIÓN DE LA PLATAFORMA ---
-            # Google devuelve algo como "via LinkedIn". Lo limpiamos para que quede solo "LinkedIn"
             plataforma_bruta = oferta.get('via', 'Plataforma desconocida')
             plataforma_limpia = plataforma_bruta.replace("via ", "").replace("vía ", "")
 
-            if enlace_final:
+            # Guardamos la oferta solo si logramos rescatar un enlace válido
+            if enlace_final and enlace_final != "Enlace no disponible":
                 ofertas_validas.append({
                     "titulo": oferta.get('title', 'Sin título'),
                     "empresa": oferta.get('company_name', 'Empresa oculta'),
@@ -80,14 +97,14 @@ def filtrar_ofertas(ofertas):
 def enviar_oferta_telegram(oferta):
     url = f"https://api.telegram.org/bot{TELEGRAM_TOKEN}/sendMessage"
     
-    # Formateamos el mensaje en HTML para que no se rompan los enlaces largos de LinkedIn/InfoJobs
-    # html.escape() protege caracteres como "<" o ">" si vienen en el título del trabajo
-    texto = f"🚨 <b>Nueva Oferta: {html.escape(oferta['titulo'])}</b>\n"
+    # Construimos el mensaje en HTML puro asegurando que los caracteres raros no rompan la estructura
+    texto = f"🚨 <b>Nueva Oferta:</b> {html.escape(oferta['titulo'])}\n"
     texto += f"🏢 <b>Empresa:</b> {html.escape(oferta['empresa'])}\n"
     texto += f"📍 <b>Ubicación:</b> {html.escape(oferta['ubicacion'])}\n"
     texto += f"🌐 <b>Plataforma:</b> {html.escape(oferta['plataforma'])}\n\n"
     texto += f"🔗 <a href='{oferta['enlace']}'>Haz clic aquí para aplicar</a>"
     
+    # Teclado con botones
     teclado = {
         "inline_keyboard": [
             [
@@ -100,7 +117,7 @@ def enviar_oferta_telegram(oferta):
     payload = {
         "chat_id": CHAT_ID,
         "text": texto,
-        "parse_mode": "HTML", # Cambiado de Markdown a HTML (A prueba de balas)
+        "parse_mode": "HTML",
         "reply_markup": json.dumps(teclado)
     }
     
@@ -111,6 +128,7 @@ def enviar_oferta_telegram(oferta):
     except Exception as e:
         print(f"Error al enviar a Telegram ({oferta['titulo']}): {e}")
 
+# --- EJECUCIÓN DEL SCRIPT ---
 if __name__ == "__main__":
     if not SERPAPI_KEY or not TELEGRAM_TOKEN or not CHAT_ID:
         print("¡ERROR! Faltan variables de entorno. Revisa tus Secrets en GitHub.")
