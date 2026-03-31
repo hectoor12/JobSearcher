@@ -3,7 +3,6 @@ import requests
 import json
 import html
 
-# Cargamos las variables de entorno
 SERPAPI_KEY = os.environ.get("SERPAPI_KEY")
 TELEGRAM_TOKEN = os.environ.get("TELEGRAM_TOKEN")
 CHAT_ID = os.environ.get("TELEGRAM_CHAT_ID")
@@ -30,6 +29,26 @@ def buscar_trabajos():
         print(f"Error al buscar en la API: {e}")
         return []
 
+def obtener_enlace_directo(job_id):
+    """Hace una segunda llamada a SerpAPI con el job_id para obtener el enlace directo."""
+    params = {
+        "engine": "google_jobs_listing",
+        "q": job_id,
+        "api_key": SERPAPI_KEY
+    }
+    try:
+        response = requests.get("https://serpapi.com/search.json", params=params)
+        response.raise_for_status()
+        data = response.json()
+        # El enlace directo viene en apply_options de este endpoint
+        for opcion in data.get("apply_options", []):
+            link = opcion.get("link", "")
+            if link and "google.com" not in link:
+                return link
+    except Exception as e:
+        print(f"Error obteniendo enlace directo para job_id {job_id}: {e}")
+    return None
+
 def filtrar_ofertas(ofertas):
     ofertas_validas = []
     
@@ -47,46 +66,28 @@ def filtrar_ofertas(ofertas):
         es_flexible = any(kw in descripcion or kw in ubicacion for kw in keywords_flexibilidad)
         
         if not es_senior and en_zona and es_flexible:
-            
+
             enlace_final = None
-            
-            # 1. Prioridad máxima: apply_options sin URLs de Google
+
+            # 1. Intentamos sacar enlace directo de apply_options (sin pasar por Google)
             for opcion in oferta.get("apply_options", []):
                 link = opcion.get("link", "")
                 if link and "google.com" not in link:
                     enlace_final = link
                     break
 
-            # 2. job_id para construir enlace de Google Jobs directamente
+            # 2. Si no hay enlace directo, hacemos segunda llamada con el job_id
             if not enlace_final:
                 job_id = oferta.get("job_id") or oferta.get("id")
                 if job_id:
-                    enlace_final = f"https://www.google.com/about/careers/applications/jobs/results/{job_id}"
+                    print(f"  → Buscando enlace directo para: {oferta.get('title', '')}")
+                    enlace_final = obtener_enlace_directo(job_id)
 
-            # 3. related_links: algunos resultados traen links directos aquí
-            if not enlace_final:
-                for rel in oferta.get("related_links", []):
-                    link = rel.get("link", "")
-                    if link and "google.com" not in link:
-                        enlace_final = link
-                        break
-
-            # 4. detected_extensions puede tener la URL de la oferta original
-            if not enlace_final:
-                ext = oferta.get("detected_extensions", {})
-                link = ext.get("source_link", "")
-                if link and link.startswith("http") and "google.com" not in link:
-                    enlace_final = link
-
-            # 5. Último recurso: share_link filtrando URLs de búsqueda de Google
+            # 3. Último recurso: share_link solo si no es una búsqueda de Google
             if not enlace_final:
                 share = oferta.get("share_link", "")
                 if share and "google.com/search" not in share:
                     enlace_final = share
-
-            # Si solo tenemos URL de búsqueda de Google, descartamos el enlace
-            if enlace_final and "google.com/search" in enlace_final:
-                enlace_final = None
 
             plataforma_limpia = oferta.get('via', 'Desconocida').replace("via ", "").replace("vía ", "")
 
@@ -113,7 +114,6 @@ def enviar_oferta_telegram(oferta):
     else:
         texto += f"🔗 Busca la oferta en <b>{html.escape(oferta['plataforma'])}</b>"
     
-    # Teclado con botones
     teclado = {
         "inline_keyboard": [
             [
@@ -140,7 +140,7 @@ def enviar_oferta_telegram(oferta):
 # --- EJECUCIÓN DEL SCRIPT ---
 if __name__ == "__main__":
     if not SERPAPI_KEY or not TELEGRAM_TOKEN or not CHAT_ID:
-        print("¡ERROR! Faltan variables de entorno. Revisa tus Secrets en GitHub o configuración local.")
+        print("¡ERROR! Faltan variables de entorno. Revisa tus Secrets en GitHub.")
     else:
         todas_las_ofertas = buscar_trabajos()
         ofertas_filtradas = filtrar_ofertas(todas_las_ofertas)
