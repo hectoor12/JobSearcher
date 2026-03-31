@@ -17,7 +17,7 @@ def buscar_trabajos_ciberseguridad():
         "location": "Madrid, Spain",
         "hl": "es",
         "gl": "es",
-        "chips": "date_posted:today", # Solo ofertas de hoy
+        "chips": "date_posted:week",
         "api_key": SERPAPI_KEY
     }
 
