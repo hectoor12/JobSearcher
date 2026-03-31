@@ -2,6 +2,7 @@ import os
 import requests
 import json
 import html
+from urllib.parse import urlparse, parse_qs
 
 # Cargamos las variables de entorno
 SERPAPI_KEY = os.environ.get("SERPAPI_KEY")
@@ -33,7 +34,6 @@ def buscar_trabajos():
 def filtrar_ofertas(ofertas):
     ofertas_validas = []
     
-    # Listas de control
     palabras_prohibidas = ["senior", "sr", "lead", "principal", "manager", "director", "architect", "arquitecto", "expert"]
     keywords_flexibilidad = ["remoto", "remote", "híbrido", "hibrido", "hybrid", "teletrabajo"]
     ciudades_permitidas = ["madrid", "alcobendas", "pozuelo", "las rozas", "getafe", "leganés"]
@@ -43,47 +43,44 @@ def filtrar_ofertas(ofertas):
         descripcion = oferta.get('description', '').lower()
         ubicacion = oferta.get('location', '').lower()
         
-        # 1. Filtros
         es_senior = any(word in titulo for word in palabras_prohibidas)
         en_zona = any(ciudad in ubicacion or ciudad in descripcion for ciudad in ciudades_permitidas)
         es_flexible = any(kw in descripcion or kw in ubicacion for kw in keywords_flexibilidad)
         
         if not es_senior and en_zona and es_flexible:
             
-            # --- EXTRACCIÓN Y LIMPIEZA DEL ENLACE ---
+            # --- EXTRACCIÓN BLINDADA DEL ENLACE ---
             enlace_final = None
             
-            # Prioridad 1: Enlace directo a la plataforma (LinkedIn, InfoJobs, etc.)
+            # Intento 1: Enlaces directos a plataformas (LinkedIn, InfoJobs...)
             opciones_aplicar = oferta.get("apply_options", [])
             for opcion in opciones_aplicar:
                 link = opcion.get("link", "")
                 if link and "google.com/search" not in link:
                     enlace_final = link
                     break
+            
+            # Intento 2: Destripar el enlace feo de Google y hacerlo corto
+            if not enlace_final:
+                enlace_feo = oferta.get("share_link", "")
+                try:
+                    # Analizamos la URL para sacar solo el parámetro 'htidocid'
+                    parsed_url = urlparse(enlace_feo)
+                    parametros = parse_qs(parsed_url.query)
                     
-            # Prioridad 2: Enlaces relacionados sin basura de Google
-            if not enlace_final:
-                links_relacionados = oferta.get("related_links", [])
-                for rel in links_relacionados:
-                    link = rel.get("link", "")
-                    if link and "google.com/search" not in link:
-                        enlace_final = link
-                        break
-
-            # Prioridad 3: Fabricamos enlace corto y limpio de Google Jobs con el ID
-            if not enlace_final:
-                job_id = oferta.get("job_id")
-                if job_id:
-                    enlace_final = f"https://www.google.com/search?htivrt=jobs&htidocid={job_id}"
-                else:
-                    enlace_final = oferta.get("share_link", "Enlace no disponible")
+                    if "htidocid" in parametros:
+                        id_limpio = parametros["htidocid"][0]
+                        # Fabricamos la URL perfecta y corta
+                        enlace_final = f"https://www.google.com/search?htivrt=jobs&htidocid={id_limpio}"
+                    else:
+                        enlace_final = enlace_feo # Solo llegaría aquí si Google cambia su sistema
+                except Exception:
+                    enlace_final = enlace_feo
 
             # --- EXTRACCIÓN DE LA PLATAFORMA ---
-            plataforma_bruta = oferta.get('via', 'Plataforma desconocida')
-            plataforma_limpia = plataforma_bruta.replace("via ", "").replace("vía ", "")
+            plataforma_limpia = oferta.get('via', 'Desconocida').replace("via ", "").replace("vía ", "")
 
-            # Guardamos la oferta solo si logramos rescatar un enlace válido
-            if enlace_final and enlace_final != "Enlace no disponible":
+            if enlace_final:
                 ofertas_validas.append({
                     "titulo": oferta.get('title', 'Sin título'),
                     "empresa": oferta.get('company_name', 'Empresa oculta'),
