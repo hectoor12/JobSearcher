@@ -46,19 +46,15 @@ def buscar_trabajos():
     }
     
     ofertas_totales = []
-    max_paginas = 5 # Barrido profundo inicial
 
-    print("🔎 Iniciando búsqueda de la SEMANA (5 páginas)...")
-
-    for pagina in range(1, max_paginas + 1):
-        params = {
-            "query": 'pentester OR "red team" OR "blue team" OR hacking OR ciberseguridad OR cybersecurity OR penetration in Madrid, Spain',
-            "page": str(pagina),
-            "num_pages": "1",
-            "date_posted": "week", # <--- Mantengo "week" para el barrido inicial
-            "country": "es",
-            "radius": "50"
-        }
+    params = {
+        "query": 'pentester OR "red team" OR "blue team" OR hacking OR ciberseguridad OR cybersecurity OR penetration in Madrid, Spain',
+        "page": str(pagina),
+        "num_pages": "1",
+        "date_posted": "week", # <--- Mantengo "week" para el barrido inicial
+        "country": "es",
+        "radius": "50"
+    }
 
         try:
             response = requests.get(url, headers=headers, params=params)
