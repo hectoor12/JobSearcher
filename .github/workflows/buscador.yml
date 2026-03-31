@@ -1,0 +1,33 @@
+name: Buscador
+
+# Esto permite que el flujo se ejecute manualmente desde la web de GitHub 
+# o mediante una llamada a la API (desde tu cron-job externo)
+on:
+  workflow_dispatch:
+
+jobs:
+  buscar_y_enviar:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Clonar el repositorio
+        uses: actions/checkout@v4
+
+      - name: Configurar entorno Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.10'
+          cache: 'pip' # Esto guarda las librerías en caché para no descargarlas de cero cada vez
+
+      - name: Instalar dependencias
+        run: |
+          python -m pip install --upgrade pip
+          pip install requests 
+
+      - name: Ejecutar el script de búsqueda
+        # Aquí inyectamos los "Secrets" de forma segura
+        env:
+          SERPAPI_KEY: ${{ secrets.SERPAPI_KEY }}
+          TELEGRAM_TOKEN: ${{ secrets.TELEGRAM_TOKEN }}
+          TELEGRAM_CHAT_ID: ${{ secrets.TELEGRAM_CHAT_ID }}
+        run: python main.py
