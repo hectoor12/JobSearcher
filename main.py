@@ -2,6 +2,7 @@ import os
 import requests
 import json
 import html
+from urllib.parse import quote_plus
 
 SERPAPI_KEY = os.environ.get("SERPAPI_KEY")
 TELEGRAM_TOKEN = os.environ.get("TELEGRAM_TOKEN")
@@ -40,7 +41,6 @@ def obtener_enlace_directo(job_id):
         response = requests.get("https://serpapi.com/search.json", params=params)
         response.raise_for_status()
         data = response.json()
-        # El enlace directo viene en apply_options de este endpoint
         for opcion in data.get("apply_options", []):
             link = opcion.get("link", "")
             if link and "google.com" not in link:
@@ -48,6 +48,25 @@ def obtener_enlace_directo(job_id):
     except Exception as e:
         print(f"Error obteniendo enlace directo para job_id {job_id}: {e}")
     return None
+
+def construir_enlace_fallback(titulo, empresa, plataforma):
+    """Si no hay enlace directo, construye una búsqueda en la plataforma correspondiente."""
+    query = quote_plus(f"{titulo} {empresa}")
+    plataforma_lower = plataforma.lower()
+
+    if "linkedin" in plataforma_lower:
+        return f"https://www.linkedin.com/jobs/search/?keywords={query}&location=Madrid"
+    elif "infojobs" in plataforma_lower:
+        return f"https://www.infojobs.net/jobsearch/search-results/list.xhtml?keyword={query}"
+    elif "indeed" in plataforma_lower:
+        return f"https://es.indeed.com/jobs?q={query}&l=Madrid"
+    elif "glassdoor" in plataforma_lower:
+        return f"https://www.glassdoor.es/Empleo/madrid-{quote_plus(titulo.lower())}-empleos-SRCH_IL.0,6_IC3162622.htm"
+    elif "tecnoempleo" in plataforma_lower:
+        return f"https://www.tecnoempleo.com/busqueda-empleo.php?te={query}&pr=Madrid"
+    else:
+        # Búsqueda genérica en Google directamente a la oferta
+        return f"https://www.google.com/search?q={quote_plus(titulo + ' ' + empresa + ' trabajo Madrid')}"
 
 def filtrar_ofertas(ofertas):
     ofertas_validas = []
@@ -68,32 +87,38 @@ def filtrar_ofertas(ofertas):
         if not es_senior and en_zona and es_flexible:
 
             enlace_final = None
+            titulo_real = oferta.get('title', 'Sin título')
+            empresa_real = oferta.get('company_name', '')
+            plataforma_limpia = oferta.get('via', 'Desconocida').replace("via ", "").replace("vía ", "").replace("a través de ", "")
 
-            # 1. Intentamos sacar enlace directo de apply_options (sin pasar por Google)
+            # 1. Enlace directo desde apply_options
             for opcion in oferta.get("apply_options", []):
                 link = opcion.get("link", "")
                 if link and "google.com" not in link:
                     enlace_final = link
                     break
 
-            # 2. Si no hay enlace directo, hacemos segunda llamada con el job_id
+            # 2. Segunda llamada con job_id
             if not enlace_final:
                 job_id = oferta.get("job_id") or oferta.get("id")
                 if job_id:
-                    print(f"  → Buscando enlace directo para: {oferta.get('title', '')}")
+                    print(f"  → Buscando enlace directo para: {titulo_real}")
                     enlace_final = obtener_enlace_directo(job_id)
 
-            # 3. Último recurso: share_link solo si no es una búsqueda de Google
+            # 3. share_link si no es búsqueda de Google
             if not enlace_final:
                 share = oferta.get("share_link", "")
                 if share and "google.com/search" not in share:
                     enlace_final = share
 
-            plataforma_limpia = oferta.get('via', 'Desconocida').replace("via ", "").replace("vía ", "")
+            # 4. Fallback: enlace de búsqueda en la plataforma correspondiente
+            if not enlace_final or "google.com/search" in enlace_final:
+                print(f"  → Construyendo enlace fallback para: {titulo_real}")
+                enlace_final = construir_enlace_fallback(titulo_real, empresa_real, plataforma_limpia)
 
             ofertas_validas.append({
-                "titulo": oferta.get('title', 'Sin título'),
-                "empresa": oferta.get('company_name', 'Empresa oculta'),
+                "titulo": titulo_real,
+                "empresa": empresa_real or "Empresa oculta",
                 "ubicacion": oferta.get('location', 'Ubicación no especificada'),
                 "plataforma": plataforma_limpia,
                 "enlace": enlace_final
@@ -108,11 +133,7 @@ def enviar_oferta_telegram(oferta):
     texto += f"🏢 <b>Empresa:</b> {html.escape(oferta['empresa'])}\n"
     texto += f"📍 <b>Ubicación:</b> {html.escape(oferta['ubicacion'])}\n"
     texto += f"🌐 <b>Plataforma:</b> {html.escape(oferta['plataforma'])}\n\n"
-    
-    if oferta.get('enlace'):
-        texto += f"🔗 <a href='{html.escape(oferta['enlace'])}'>Haz clic aquí para aplicar</a>"
-    else:
-        texto += f"🔗 Busca la oferta en <b>{html.escape(oferta['plataforma'])}</b>"
+    texto += f"🔗 <a href='{html.escape(oferta['enlace'])}'>Haz clic aquí para aplicar</a>"
     
     teclado = {
         "inline_keyboard": [
@@ -149,3 +170,8 @@ if __name__ == "__main__":
         
         for trabajo in ofertas_filtradas:
             enviar_oferta_telegram(trabajo)
+```
+
+Ahora el flujo es: enlace directo → segunda llamada SerpAPI → share_link → **búsqueda en la plataforma correcta**. Para el caso que pusiste (`Ingeniero/a CyberArk` en LinkedIn), generaría este enlace:
+```
+https://www.linkedin.com/jobs/search/?keywords=Ingeniero%2Fa+CyberArk+IOON&location=Madrid
