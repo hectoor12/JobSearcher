@@ -12,11 +12,12 @@ def buscar_trabajos_ciberseguridad():
     # Parámetros exactos para la API
     params = {
         "engine": "google_jobs",
-        # Usamos operadores booleanos en la búsqueda
-        "q": "junior (pentester OR \"red team\" OR \"blue team\")",
+        # Agrupamos la experiencia y luego todas tus palabras clave de ciberseguridad
+        "q": "(junior OR jr) (pentester OR \"red team\" OR \"blue team\" OR hacking OR ciberseguridad OR cybersecurity OR cibersecurity OR penetration)",
         "location": "Madrid, Spain",
-        "hl": "es", # Idioma español
-        "gl": "es", # Región España
+        "hl": "es",
+        "gl": "es",
+        "chips": "date_posted:today", # Solo ofertas de hoy
         "api_key": SERPAPI_KEY
     }
 
