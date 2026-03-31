@@ -12,7 +12,7 @@ import json
 
 SERPAPI_KEY = os.environ.get("SERPAPI_KEY")
 
-def buscar_trabajos_ninja():
+def buscar_trabajos():
     print("Iniciando búsqueda amplia en Google Jobs (Última semana)...")
     
     params = {
@@ -30,7 +30,7 @@ def buscar_trabajos_ninja():
     response = requests.get(url, params=params)
     return response.json().get("jobs_results", [])
 
-def filtrar_ofertas_ninja(ofertas):
+def filtrar_ofertas(ofertas):
     ofertas_validas = []
     
     # --- LISTAS DE CONTROL ---
@@ -109,7 +109,7 @@ def enviar_oferta_telegram(oferta):
 # --- EJECUCIÓN DEL SCRIPT ---
 # --- EJECUCIÓN DEL SCRIPT ---
 if __name__ == "__main__":
-    todas_las_ofertas = buscar_trabajos_ciberseguridad()
+    todas_las_ofertas = buscar_trabajos()
     ofertas_filtradas = filtrar_ofertas(todas_las_ofertas)
     
     print(f"Enviando {len(ofertas_filtradas)} ofertas válidas a Telegram...")
