@@ -33,7 +33,6 @@ def buscar_trabajos():
 def filtrar_ofertas(ofertas):
     ofertas_validas = []
     
-    # --- LISTAS DE CONTROL ---
     palabras_prohibidas = ["senior", "sr", "lead", "principal", "manager", "director", "architect", "arquitecto", "expert"]
     keywords_flexibilidad = ["remoto", "remote", "híbrido", "hibrido", "hybrid", "teletrabajo"]
     ciudades_permitidas = ["madrid", "alcobendas", "pozuelo", "las rozas", "getafe", "leganés"]
@@ -43,29 +42,44 @@ def filtrar_ofertas(ofertas):
         descripcion = oferta.get('description', '').lower()
         ubicacion = oferta.get('location', '').lower()
         
-        # 1. ¿Es una posición de alta responsabilidad? (FILTRO NINJA)
-        # Si tiene alguna palabra prohibida en el TÍTULO, la descartamos fulminantemente
+        # 1. Filtro de Nivel (No Senior)
         es_senior = any(word in titulo for word in palabras_prohibidas)
         
-        # 2. ¿Es en la zona de Madrid?
+        # 2. Filtro de Ubicación
         en_zona = any(ciudad in ubicacion or ciudad in descripcion for ciudad in ciudades_permitidas)
         
-        # 3. ¿Ofrece flexibilidad?
+        # 3. Filtro de Flexibilidad
         es_flexible = any(kw in descripcion or kw in ubicacion for kw in keywords_flexibilidad)
         
-        # LÓGICA FINAL: Si NO es senior, y está EN ZONA, y es FLEXIBLE... ¡Pa' dentro!
         if not es_senior and en_zona and es_flexible:
             
-            # Arreglo de URL que comentamos antes
-            apply_options = oferta.get("apply_options", [])
-            enlace = apply_options[0].get("link") if apply_options else oferta.get("share_link", "Sin enlace")
-                
-            ofertas_validas.append({
-                "titulo": oferta.get('title'),
-                "empresa": oferta.get('company_name'),
-                "ubicacion": oferta.get('location'),
-                "enlace": enlace
-            })
+            # --- CORRECCIÓN DEFINITIVA DEL ENLACE ---
+            # Google Jobs guarda los enlaces reales en 'apply_options'
+            opciones_aplicar = oferta.get("apply_options", [])
+            enlace_final = None
+
+            if opciones_aplicar:
+                # Intentamos coger el primer enlace de la lista (suele ser el más directo)
+                enlace_final = opciones_aplicar[0].get("link")
+            
+            # Si por lo que sea no hay apply_options, buscamos en related_links
+            if not enlace_final:
+                links_relacionados = oferta.get("related_links", [])
+                if links_relacionados:
+                    enlace_final = links_relacionados[0].get("link")
+
+            # Si sigue sin haber nada (raro), usamos el share_link como último recurso
+            if not enlace_final:
+                enlace_final = oferta.get("share_link")
+
+            # Solo añadimos si hemos conseguido un enlace que no sea None
+            if enlace_final:
+                ofertas_validas.append({
+                    "titulo": oferta.get('title'),
+                    "empresa": oferta.get('company_name'),
+                    "ubicacion": oferta.get('location'),
+                    "enlace": enlace_final
+                })
             
     return ofertas_validas
 
