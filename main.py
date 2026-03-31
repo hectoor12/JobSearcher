@@ -40,31 +40,43 @@ def buscar_trabajos_ciberseguridad():
 def filtrar_ofertas(ofertas):
     ofertas_validas = []
     
-    # Palabras clave que queremos encontrar
+    # Listas de palabras clave para el filtrado estricto
     keywords_flexibilidad = ["remoto", "remote", "híbrido", "hibrido", "hybrid", "teletrabajo"]
+    keywords_junior = ["junior", "jr", "trainee", "prácticas", "practicas", "entry level", "sin experiencia"]
     
     for oferta in ofertas:
-        titulo = oferta.get('title', 'Sin título')
-        empresa = oferta.get('company_name', 'Empresa oculta')
-        # Google Jobs a veces da la descripción o fragmentos (snippets)
+        # Extraemos en minúsculas para facilitar la búsqueda
+        titulo_lower = oferta.get('title', '').lower()
         descripcion = oferta.get('description', '').lower()
         ubicacion = oferta.get('location', '').lower()
+        empresa = oferta.get('company_name', 'Empresa oculta')
         
-        # 1. Comprobamos flexibilidad (Remoto o Híbrido)
-        # Buscamos si alguna de nuestras palabras clave está en la descripción o en la ubicación
-        es_flexible = any(keyword in descripcion for keyword in keywords_flexibilidad) or \
-                      any(keyword in ubicacion for keyword in keywords_flexibilidad)
+        # 1. FILTRO ESTRICTO JUNIOR: Tiene que estar en el título o en la descripción
+        es_junior = any(kw in titulo_lower or kw in descripcion for kw in keywords_junior)
         
-        # 2. Comprobamos que sea Madrid (aunque la API ya filtra, nos aseguramos)
+        # 2. FILTRO FLEXIBILIDAD: Remoto o Híbrido
+        es_flexible = any(kw in descripcion or kw in ubicacion for kw in keywords_flexibilidad)
+        
+        # 3. FILTRO UBICACIÓN: Madrid
         es_madrid = "madrid" in ubicacion or "madrid" in descripcion
         
-        if es_flexible and es_madrid:
+        if es_junior and es_flexible and es_madrid:
+            # --- ARREGLO DE LA URL ---
+            enlace = "Enlace no disponible"
+            apply_options = oferta.get("apply_options", [])
+            
+            # Buscamos los enlaces directos de aplicación (LinkedIn, web de empresa, etc.)
+            if apply_options and len(apply_options) > 0:
+                enlace = apply_options[0].get("link", "Enlace no disponible")
+            else:
+                # Como plan B, usamos el related_link o share_link
+                enlace = oferta.get("share_link", "Enlace no disponible")
+                
             ofertas_validas.append({
-                "titulo": titulo,
+                "titulo": oferta.get('title', 'Sin título'), # Guardamos el título original con mayúsculas
                 "empresa": empresa,
                 "ubicacion": oferta.get('location', 'Madrid'),
-                # Link directo para aplicar
-                "enlace": oferta.get('share_link', 'Enlace no disponible') 
+                "enlace": enlace
             })
             
     return ofertas_validas
