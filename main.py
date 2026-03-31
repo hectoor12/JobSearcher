@@ -2,7 +2,6 @@ import os
 import requests
 import json
 import html
-from urllib.parse import urlparse, parse_qs
 
 # Cargamos las variables de entorno
 SERPAPI_KEY = os.environ.get("SERPAPI_KEY")
@@ -56,26 +55,22 @@ def filtrar_ofertas(ofertas):
             opciones_aplicar = oferta.get("apply_options", [])
             for opcion in opciones_aplicar:
                 link = opcion.get("link", "")
-                if link and "google.com/search" not in link:
+                # Excluimos cualquier enlace que pase por los servidores de Google para ir a la fuente original
+                if link and "google.com" not in link:
                     enlace_final = link
                     break
             
-            # Intento 2: Destripar el enlace feo de Google y hacerlo corto
+            # Intento 2: Construir el enlace perfecto hacia Google Jobs
             if not enlace_final:
-                enlace_feo = oferta.get("share_link", "")
-                try:
-                    # Analizamos la URL para sacar solo el parámetro 'htidocid'
-                    parsed_url = urlparse(enlace_feo)
-                    parametros = parse_qs(parsed_url.query)
-                    
-                    if "htidocid" in parametros:
-                        id_limpio = parametros["htidocid"][0]
-                        # Fabricamos la URL perfecta y corta
-                        enlace_final = f"https://www.google.com/search?htivrt=jobs&htidocid={id_limpio}"
-                    else:
-                        enlace_final = enlace_feo # Solo llegaría aquí si Google cambia su sistema
-                except Exception:
-                    enlace_final = enlace_feo
+                # SerpAPI ya nos da el ID limpio en 'job_id', no hace falta destripar la URL
+                job_id = oferta.get("job_id")
+                
+                if job_id:
+                    # La magia está en 'ibp=htl;jobs' y '#fpstate=tldetail' para forzar la tarjeta del empleo
+                    enlace_final = f"https://www.google.com/search?q=trabajos&ibp=htl;jobs#fpstate=tldetail&htidocid={job_id}"
+                else:
+                    # Intento 3: Fallback en caso extremo
+                    enlace_final = oferta.get("share_link", "https://www.google.com/search?q=trabajos")
 
             # --- EXTRACCIÓN DE LA PLATAFORMA ---
             plataforma_limpia = oferta.get('via', 'Desconocida').replace("via ", "").replace("vía ", "")
