@@ -2,11 +2,49 @@ import os
 import requests
 import serpapi
 import html
+import json
+import hashlib
+import firebase_admin
+from firebase_admin import credentials, firestore
 
 # --- CREDENCIALES ---
 SERPAPI_KEY = os.environ.get("SERPAPI_KEY")
 TELEGRAM_TOKEN = os.environ.get("TELEGRAM_TOKEN")
 CHAT_ID = os.environ.get("TELEGRAM_CHAT_ID")
+FIREBASE_JSON_STR = os.environ.get("FIREBASE_CREDENTIALS")
+
+# --- INICIALIZACIÓN FIREBASE ---
+if FIREBASE_JSON_STR:
+    try:
+        cred_dict = json.loads(FIREBASE_JSON_STR)
+        cred = credentials.Certificate(cred_dict)
+        firebase_admin.initialize_app(cred)
+        db = firestore.client()
+    except Exception as e:
+        print(f"Error al inicializar Firebase: {e}")
+        exit()
+else:
+    print("Error: No se encontró la variable de entorno FIREBASE_CREDENTIALS")
+    exit()
+
+# --- FUNCIONES DE BASE DE DATOS ---
+def generar_id_unico(oferta):
+    """Crea un ID único basado en el título y la empresa para evitar duplicados."""
+    cadena = f"{oferta['titulo']}{oferta['empresa']}".lower().strip()
+    return hashlib.md5(cadena.encode()).hexdigest()
+
+def trabajo_ya_existe(job_id):
+    """Consulta si el ID ya existe en la colección de Firestore."""
+    doc_ref = db.collection("ofertas_enviadas").document(job_id)
+    return doc_ref.get().exists
+
+def guardar_trabajo(job_id, oferta):
+    """Registra el trabajo en la base de datos."""
+    db.collection("ofertas_enviadas").document(job_id).set({
+        "titulo": oferta["titulo"],
+        "empresa": oferta["empresa"],
+        "fecha_registro": firestore.SERVER_TIMESTAMP
+    })
 
 # --- 1. BÚSQUEDA (Solo Google Jobs) ---
 def buscar_trabajos():
@@ -23,7 +61,6 @@ def buscar_trabajos():
         
         ofertas = []
         for j in results.get("jobs_results", []):
-            # Priorizamos el source_link, si no existe buscamos en apply_options
             link = j.get("source_link")
             if not link and j.get("apply_options"):
                 link = j.get("apply_options")[0].get("link")
@@ -37,7 +74,8 @@ def buscar_trabajos():
                 "plataforma": j.get("via", "Google Jobs").replace("via ", "").replace("vía ", "")
             })
         return ofertas
-    except Exception:
+    except Exception as e:
+        print(f"Error en SerpAPI: {e}")
         return []
 
 # --- 2. FILTRADO ---
@@ -85,11 +123,7 @@ def enviar_oferta_telegram(oferta):
         "parse_mode": "HTML",
         "reply_markup": {
             "inline_keyboard": [
-                [{"text": "🔗 Ver Oferta", "url": oferta['enlace']}],
-                [
-                    {"text": "✅ Aceptar", "callback_data": "aceptar"},
-                    {"text": "❌ Rechazar", "callback_data": "rechazar"}
-                ]
+                [{"text": "🔗 Ver Oferta", "url": oferta['enlace']}]
             ]
         }
     }
@@ -107,11 +141,16 @@ if __name__ == "__main__":
         if todas:
             filtradas = filtrar_ofertas(todas)
             
-            vistas = set()
             for trabajo in filtradas:
-                id_unico = f"{trabajo['titulo']}{trabajo['empresa']}".lower()
-                if id_unico not in vistas:
+                # Generamos ID único para este trabajo
+                job_id = generar_id_unico(trabajo)
+                
+                # Comprobamos en Firebase si ya se envió
+                if not trabajo_ya_existe(job_id):
                     enviar_oferta_telegram(trabajo)
-                    vistas.add(id_unico)
+                    guardar_trabajo(job_id, trabajo)
+                    print(f"✅ Nueva oferta enviada: {trabajo['titulo']}")
+                else:
+                    print(f"ℹ️ Oferta ya conocida (omitida): {trabajo['titulo']}")
     else:
-        print("Error: Faltan variables de entorno (API Keys o Chat ID)")
+        print("Error: Faltan variables de entorno")
