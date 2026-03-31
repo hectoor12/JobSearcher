@@ -5,7 +5,7 @@ import json
 import firebase_admin
 from firebase_admin import credentials, firestore
 
-# --- CREDENCIALES (Cargadas desde los Secrets de GitHub) ---
+# --- CREDENCIALES ---
 RAPIDAPI_KEY = os.environ.get("RAPIDAPI_KEY")
 TELEGRAM_TOKEN = os.environ.get("TELEGRAM_TOKEN")
 CHAT_ID = os.environ.get("TELEGRAM_CHAT_ID")
@@ -45,16 +45,20 @@ def buscar_trabajos():
         "x-rapidapi-host": "jsearch.p.rapidapi.com"
     }
     
-    ofertas_totales = []    
+    ofertas_totales = []
+    max_paginas = 5 # Barrido profundo inicial
 
-    params = {
-        "query": 'pentester OR "red team" OR "blue team" OR hacking OR ciberseguridad OR cybersecurity OR penetration in Madrid, Spain',
-        "page": 1,
-        "num_pages": "1",
-        "date_posted": "today",
-        "country": "es",
-        "radius": "50"
-        
+    print("🔎 Iniciando búsqueda de la SEMANA (5 páginas)...")
+
+    for pagina in range(1, max_paginas + 1):
+        params = {
+            "query": 'pentester OR "red team" OR "blue team" OR hacking OR ciberseguridad OR cybersecurity OR penetration in Madrid, Spain',
+            "page": str(pagina),
+            "num_pages": "1",
+            "date_posted": "week", # <--- Mantengo "week" para el barrido inicial
+            "country": "es",
+            "radius": "50"
+        }
 
         try:
             response = requests.get(url, headers=headers, params=params)
@@ -85,10 +89,9 @@ def buscar_trabajos():
             
     return ofertas_totales
 
-# --- 2. FILTRADO (Quitamos Seniors) ---
+# --- 2. FILTRADO ---
 def filtrar_ofertas(ofertas):
     ofertas_validas = []
-    # Lista de palabras que suelen indicar cargos altos
     palabras_prohibidas = ["senior", "sr", "lead", "principal", "manager", "director", "architect"]
 
     for oferta in ofertas:
@@ -124,7 +127,7 @@ def enviar_oferta_telegram(oferta):
     except Exception as e:
         print(f"Error Telegram: {e}")
 
-# --- EJECUCIÓN PRINCIPAL ---
+# --- EJECUCIÓN ---
 if __name__ == "__main__":
     ofertas_crudas = buscar_trabajos()
     filtradas = filtrar_ofertas(ofertas_crudas)
@@ -137,6 +140,3 @@ if __name__ == "__main__":
             enviar_oferta_telegram(job)
             guardar_trabajo(job_id, job)
             print(f"📩 Enviada: {job['titulo']}")
-        else:
-            # No imprimimos nada para no llenar el log de GitHub
-            pass
