@@ -46,34 +46,38 @@ def guardar_trabajo(job_id, oferta):
         "fecha_registro": firestore.SERVER_TIMESTAMP
     })
 
-# --- 1. BÚSQUEDA (Con Paginación y sin Chips) ---
+# --- 1. BÚSQUEDA (Con Paginación por Tokens) ---
 def buscar_trabajos():
     client = serpapi.Client(api_key=SERPAPI_KEY)
     ofertas_totales = []
-    start_index = 0
-    max_paginas = 10  # Límite de seguridad (100 ofertas aprox) para no quemar la API
+    pagina_actual = 0
+    max_paginas = 10  # Límite de seguridad
+    next_page_token = None  # Inicializamos sin token para la primera petición
     
     print("🔎 Iniciando búsqueda exhaustiva en Google Jobs...")
 
-    while start_index < (max_paginas * 10):
+    while pagina_actual < max_paginas:
         try:
             params = {
                 "engine": "google_jobs",
                 "q": 'pentester OR "red team" OR "blue team" OR hacking OR ciberseguridad OR cybersecurity OR penetration',
                 "location": "Madrid, Spain",
                 "gl": "es",
-                "hl": "es",
-                "start": start_index  # Paginación
+                "hl": "es"
             }
+            
+            # Si tenemos un token de la petición anterior, lo añadimos
+            if next_page_token:
+                params["next_page_token"] = next_page_token
             
             results = client.search(params)
             jobs = results.get("jobs_results", [])
             
             if not jobs:
-                print(f"✅ No hay más resultados en la posición {start_index}.")
+                print(f"✅ No hay más resultados en la página {pagina_actual + 1}.")
                 break
                 
-            print(f"📦 Obtenidas {len(jobs)} ofertas de la página {int(start_index/10) + 1}...")
+            print(f"📦 Obtenidas {len(jobs)} ofertas de la página {pagina_actual + 1}...")
 
             for j in jobs:
                 link = j.get("source_link")
@@ -89,11 +93,18 @@ def buscar_trabajos():
                     "plataforma": j.get("via", "Google Jobs").replace("via ", "").replace("vía ", "")
                 })
             
-            # Incrementamos para la siguiente página
-            start_index += 10
+            # Buscar el token para la siguiente iteración
+            next_page_token = results.get("serpapi_pagination", {}).get("next_page_token")
+            
+            # Si no hay token de siguiente página, hemos terminado
+            if not next_page_token:
+                print("✅ Se alcanzó el final de los resultados paginados.")
+                break
+            
+            pagina_actual += 1
             
         except Exception as e:
-            print(f"Error en SerpAPI en la posición {start_index}: {e}")
+            print(f"❌ Error en SerpAPI en la página {pagina_actual + 1}: {e}")
             break
             
     print(f"📊 Total de ofertas brutas encontradas: {len(ofertas_totales)}")
@@ -185,5 +196,4 @@ if __name__ == "__main__":
         else:
             print("No se encontraron ofertas en la búsqueda.")
     else:
-        print("Error: Faltan variables de entorno (SERPAPI_KEY, TELEGRAM_TOKEN o TELEGRAM_CHAT_ID)")
-        
+        print("Error: Faltan variables de entorno (SERPAPI_KEY, TELEGRAM_TOKEN o TELEGRAM
