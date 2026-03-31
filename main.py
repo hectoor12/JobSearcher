@@ -6,77 +6,64 @@ SERPAPI_KEY = os.environ.get("SERPAPI_KEY")
 TELEGRAM_TOKEN = os.environ.get("TELEGRAM_TOKEN")
 CHAT_ID = os.environ.get("TELEGRAM_CHAT_ID")
 
-def buscar_trabajos_ciberseguridad():
-    print("Iniciando búsqueda en Google Jobs vía SerpApi...")
+import os
+import requests
+import json
+
+SERPAPI_KEY = os.environ.get("SERPAPI_KEY")
+
+def buscar_trabajos_ninja():
+    print("Iniciando búsqueda amplia en Google Jobs (Última semana)...")
     
-    # Parámetros exactos para la API
     params = {
         "engine": "google_jobs",
-        # Agrupamos la experiencia y luego todas tus palabras clave de ciberseguridad
-        "q": "(junior OR jr) (pentester OR \"red team\" OR \"blue team\" OR hacking OR ciberseguridad OR cybersecurity OR cibersecurity OR penetration)",
+        # Quitamos 'junior' de la búsqueda principal para que Google nos dé TODO
+        "q": "pentester OR \"red team\" OR \"blue team\" OR hacking OR ciberseguridad OR cybersecurity OR penetration",
         "location": "Madrid, Spain",
         "hl": "es",
         "gl": "es",
-        "chips": "date_posted:week",
+        "chips": "date_posted:week", # Ampliamos a la semana para no perder nada
         "api_key": SERPAPI_KEY
     }
 
     url = "https://serpapi.com/search.json"
-    
-    try:
-        response = requests.get(url, params=params)
-        response.raise_for_status() # Comprueba que no haya errores de conexión
-        datos = response.json()
-        
-        # Extraemos la lista de trabajos (si no hay, devuelve una lista vacía)
-        ofertas = datos.get("jobs_results", [])
-        print(f"Se encontraron {len(ofertas)} ofertas en bruto. Aplicando filtros...")
-        
-        return ofertas
+    response = requests.get(url, params=params)
+    return response.json().get("jobs_results", [])
 
-    except Exception as e:
-        print(f"Error al conectar con la API: {e}")
-        return []
-
-def filtrar_ofertas(ofertas):
+def filtrar_ofertas_ninja(ofertas):
     ofertas_validas = []
     
-    # Listas de palabras clave para el filtrado estricto
+    # --- LISTAS DE CONTROL ---
+    palabras_prohibidas = ["senior", "sr", "lead", "principal", "manager", "director", "architect", "arquitecto", "expert"]
     keywords_flexibilidad = ["remoto", "remote", "híbrido", "hibrido", "hybrid", "teletrabajo"]
-    keywords_junior = ["junior", "jr", "trainee", "prácticas", "practicas", "entry level", "sin experiencia"]
-    
+    ciudades_permitidas = ["madrid", "alcobendas", "pozuelo", "las rozas", "getafe", "leganés"]
+
     for oferta in ofertas:
-        # Extraemos en minúsculas para facilitar la búsqueda
-        titulo_lower = oferta.get('title', '').lower()
+        titulo = oferta.get('title', '').lower()
         descripcion = oferta.get('description', '').lower()
         ubicacion = oferta.get('location', '').lower()
-        empresa = oferta.get('company_name', 'Empresa oculta')
         
-        # 1. FILTRO ESTRICTO JUNIOR: Tiene que estar en el título o en la descripción
-        es_junior = any(kw in titulo_lower or kw in descripcion for kw in keywords_junior)
+        # 1. ¿Es una posición de alta responsabilidad? (FILTRO NINJA)
+        # Si tiene alguna palabra prohibida en el TÍTULO, la descartamos fulminantemente
+        es_senior = any(word in titulo for word in palabras_prohibidas)
         
-        # 2. FILTRO FLEXIBILIDAD: Remoto o Híbrido
+        # 2. ¿Es en la zona de Madrid?
+        en_zona = any(ciudad in ubicacion or ciudad in descripcion for ciudad in ciudades_permitidas)
+        
+        # 3. ¿Ofrece flexibilidad?
         es_flexible = any(kw in descripcion or kw in ubicacion for kw in keywords_flexibilidad)
         
-        # 3. FILTRO UBICACIÓN: Madrid
-        es_madrid = "madrid" in ubicacion or "madrid" in descripcion
-        
-        if es_junior and es_flexible and es_madrid:
-            # --- ARREGLO DE LA URL ---
-            enlace = "Enlace no disponible"
-            apply_options = oferta.get("apply_options", [])
+        # LÓGICA FINAL: Si NO es senior, y está EN ZONA, y es FLEXIBLE... ¡Pa' dentro!
+        if not es_senior and en_zona and es_flexible:
             
-            # Buscamos los enlaces directos de aplicación (LinkedIn, web de empresa, etc.)
-            if apply_options and len(apply_options) > 0:
-                enlace = apply_options[0].get("link", "Enlace no disponible")
-            else:
-                # Como plan B, usamos el related_link o share_link
-                enlace = oferta.get("share_link", "Enlace no disponible")
+            # Arreglo de URL que comentamos antes
+            apply_options = oferta.get("apply_options", [])
+            enlace = apply_options[0].get("link") if apply_options else oferta.get("share_link", "Sin enlace")
                 
             ofertas_validas.append({
-                "titulo": oferta.get('title', 'Sin título'), # Guardamos el título original con mayúsculas
-                "empresa": empresa,
-                "ubicacion": oferta.get('location', 'Madrid'),
+                "titulo": oferta.get('title'),
+                "empresa": oferta.get('company_name'),
+                "ubicacion": oferta.get('location'),
                 "enlace": enlace
             })
             
