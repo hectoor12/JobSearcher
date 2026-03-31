@@ -45,20 +45,16 @@ def buscar_trabajos():
         "x-rapidapi-host": "jsearch.p.rapidapi.com"
     }
     
-    ofertas_totales = []
-    max_paginas = 5  # <--- Búsqueda profunda inicial
-    
-    print("🔎 Iniciando barrido de la última SEMANA (5 páginas)...")
+    ofertas_totales = []    
 
-    for pagina in range(1, max_paginas + 1):
-        params = {
-            "query": 'pentester OR "red team" OR "blue team" OR hacking OR ciberseguridad OR cybersecurity OR penetration in Madrid, Spain',
-            "page": str(pagina),
-            "num_pages": "1",
-            "date_posted": "week",  # <--- CAMBIAR A "today" MAÑANA
-            "country": "es",
-            "radius": "50"
-        }
+    params = {
+        "query": 'pentester OR "red team" OR "blue team" OR hacking OR ciberseguridad OR cybersecurity OR penetration in Madrid, Spain',
+        "page": 1,
+        "num_pages": "1",
+        "date_posted": "today",
+        "country": "es",
+        "radius": "50"
+        
 
         try:
             response = requests.get(url, headers=headers, params=params)
