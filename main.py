@@ -46,38 +46,58 @@ def guardar_trabajo(job_id, oferta):
         "fecha_registro": firestore.SERVER_TIMESTAMP
     })
 
-# --- 1. BÚSQUEDA (Solo Google Jobs) ---
+# --- 1. BÚSQUEDA (Con Paginación y sin Chips) ---
 def buscar_trabajos():
     client = serpapi.Client(api_key=SERPAPI_KEY)
-    try:
-        results = client.search({
-            "engine": "google_jobs",
-            "q": 'pentester OR "red team" OR "blue team" OR hacking OR ciberseguridad OR cybersecurity OR penetration',
-            "location": "Madrid, Spain",
-            "gl": "es",
-            "hl": "es",
-            "chips": "date_posted:day"
-        })
-        
-        ofertas = []
-        for j in results.get("jobs_results", []):
-            # Priorizamos el source_link, si no existe buscamos en apply_options
-            link = j.get("source_link")
-            if not link and j.get("apply_options"):
-                link = j.get("apply_options")[0].get("link")
+    ofertas_totales = []
+    start_index = 0
+    max_paginas = 10  # Límite de seguridad (100 ofertas aprox) para no quemar la API
+    
+    print("🔎 Iniciando búsqueda exhaustiva en Google Jobs...")
+
+    while start_index < (max_paginas * 10):
+        try:
+            params = {
+                "engine": "google_jobs",
+                "q": 'pentester OR "red team" OR "blue team" OR hacking OR ciberseguridad OR cybersecurity OR penetration',
+                "location": "Madrid, Spain",
+                "gl": "es",
+                "hl": "es",
+                "start": start_index  # Paginación
+            }
             
-            ofertas.append({
-                "titulo": j.get("title", ""),
-                "empresa": j.get("company_name", "Empresa oculta"),
-                "ubicacion": j.get("location", ""),
-                "descripcion": j.get("description", ""),
-                "enlace": link,
-                "plataforma": j.get("via", "Google Jobs").replace("via ", "").replace("vía ", "")
-            })
-        return ofertas
-    except Exception as e:
-        print(f"Error en SerpAPI: {e}")
-        return []
+            results = client.search(params)
+            jobs = results.get("jobs_results", [])
+            
+            if not jobs:
+                print(f"✅ No hay más resultados en la posición {start_index}.")
+                break
+                
+            print(f"📦 Obtenidas {len(jobs)} ofertas de la página {int(start_index/10) + 1}...")
+
+            for j in jobs:
+                link = j.get("source_link")
+                if not link and j.get("apply_options"):
+                    link = j.get("apply_options")[0].get("link")
+                
+                ofertas_totales.append({
+                    "titulo": j.get("title", ""),
+                    "empresa": j.get("company_name", "Empresa oculta"),
+                    "ubicacion": j.get("location", ""),
+                    "descripcion": j.get("description", ""),
+                    "enlace": link,
+                    "plataforma": j.get("via", "Google Jobs").replace("via ", "").replace("vía ", "")
+                })
+            
+            # Incrementamos para la siguiente página
+            start_index += 10
+            
+        except Exception as e:
+            print(f"Error en SerpAPI en la posición {start_index}: {e}")
+            break
+            
+    print(f"📊 Total de ofertas brutas encontradas: {len(ofertas_totales)}")
+    return ofertas_totales
 
 # --- 2. FILTRADO ---
 def filtrar_ofertas(ofertas):
@@ -85,18 +105,21 @@ def filtrar_ofertas(ofertas):
     
     palabras_prohibidas = ["senior", "sr", "lead", "principal", "manager", "director", "architect", "arquitecto", "expert"]
     keywords_flexibilidad = ["remoto", "remote", "híbrido", "hibrido", "hybrid", "teletrabajo"]
-    ciudades_permitidas = ["madrid", "comunidad de madrid", "españa", "spain", "alcobendas", "pozuelo", "las rozas", "getafe", "leganés", "móstoles"]
+    # Hemos ampliado un poco los criterios de zona para ser menos estrictos
+    ciudades_permitidas = ["madrid", "españa", "spain", "alcobendas", "pozuelo", "las rozas", "getafe", "leganés", "móstoles", "fuenlabrada"]
 
     for oferta in ofertas:
         titulo = oferta["titulo"].lower()
         descripcion = oferta["descripcion"].lower()
         ubicacion = oferta["ubicacion"].lower()
         
+        # Lógica de filtrado
         es_senior = any(word in titulo.split() for word in palabras_prohibidas)
         en_zona = any(ciudad in ubicacion or ciudad in descripcion for ciudad in ciudades_permitidas)
         es_flexible = any(kw in descripcion or kw in ubicacion for kw in keywords_flexibilidad)
         
-        if not es_senior and en_zona:
+        # Si NO es senior Y (está en Madrid o es Remoto/Híbrido)
+        if not es_senior and (en_zona or es_flexible):
             if oferta["enlace"]:
                 if es_flexible:
                     oferta["modalidad"] = "🏠 Remoto / Híbrido"
@@ -134,7 +157,9 @@ def enviar_oferta_telegram(oferta):
     }
     
     try:
-        requests.post(url, json=payload)
+        r = requests.post(url, json=payload)
+        if r.status_code != 200:
+            print(f"❌ Error Telegram ({r.status_code}): {r.text}")
     except Exception as e:
         print(f"Error enviando a Telegram: {e}")
 
@@ -145,17 +170,20 @@ if __name__ == "__main__":
         
         if todas:
             filtradas = filtrar_ofertas(todas)
+            print(f"🎯 Ofertas tras aplicar filtros: {len(filtradas)}")
             
             for trabajo in filtradas:
-                # Generamos ID único para este trabajo
                 job_id = generar_id_unico(trabajo)
                 
-                # Comprobamos en Firebase si ya se envió
                 if not trabajo_ya_existe(job_id):
                     enviar_oferta_telegram(trabajo)
                     guardar_trabajo(job_id, trabajo)
-                    print(f"✅ Nueva oferta enviada y guardada: {trabajo['titulo']}")
+                    print(f"📩 Enviada: {trabajo['titulo']} en {trabajo['empresa']}")
                 else:
-                    print(f"ℹ️ Oferta ya conocida (omitida): {trabajo['titulo']}")
+                    # Opcional: print(f"Omitida (ya existe): {trabajo['titulo']}")
+                    pass
+        else:
+            print("No se encontraron ofertas en la búsqueda.")
     else:
         print("Error: Faltan variables de entorno (SERPAPI_KEY, TELEGRAM_TOKEN o TELEGRAM_CHAT_ID)")
+        
