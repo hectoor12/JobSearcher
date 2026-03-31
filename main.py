@@ -1,8 +1,9 @@
 import os
 import requests
 import json
+import html # Añadimos esta librería nativa para evitar errores con caracteres especiales en Telegram
 
-# Cargamos las variables de entorno (solo una vez)
+# Cargamos las variables de entorno
 SERPAPI_KEY = os.environ.get("SERPAPI_KEY")
 TELEGRAM_TOKEN = os.environ.get("TELEGRAM_TOKEN")
 CHAT_ID = os.environ.get("TELEGRAM_CHAT_ID")
@@ -41,38 +42,36 @@ def filtrar_ofertas(ofertas):
         descripcion = oferta.get('description', '').lower()
         ubicacion = oferta.get('location', '').lower()
         
-        # 1. Filtro de Nivel (No Senior)
+        # 1. Filtros
         es_senior = any(word in titulo for word in palabras_prohibidas)
-        
-        # 2. Filtro de Ubicación
         en_zona = any(ciudad in ubicacion or ciudad in descripcion for ciudad in ciudades_permitidas)
-        
-        # 3. Filtro de Flexibilidad
         es_flexible = any(kw in descripcion or kw in ubicacion for kw in keywords_flexibilidad)
         
         if not es_senior and en_zona and es_flexible:
             
-            # --- CORRECCIÓN DEFINITIVA DEL ENLACE (Limpia y sin errores) ---
+            # --- EXTRACCIÓN DEL ENLACE ---
             enlace_final = None
             opciones_aplicar = oferta.get("apply_options", [])
             links_relacionados = oferta.get("related_links", [])
             
-            # Prioridad 1: Botón directo de aplicar
             if opciones_aplicar:
                 enlace_final = opciones_aplicar[0].get("link")
-            # Prioridad 2: Enlaces relacionados
             elif links_relacionados:
                 enlace_final = links_relacionados[0].get("link")
-            # Prioridad 3: El enlace por defecto de compartir
             else:
                 enlace_final = oferta.get("share_link")
 
-            # Solo añadimos si hemos conseguido un enlace
+            # --- EXTRACCIÓN DE LA PLATAFORMA ---
+            # Google devuelve algo como "via LinkedIn". Lo limpiamos para que quede solo "LinkedIn"
+            plataforma_bruta = oferta.get('via', 'Plataforma desconocida')
+            plataforma_limpia = plataforma_bruta.replace("via ", "").replace("vía ", "")
+
             if enlace_final:
                 ofertas_validas.append({
                     "titulo": oferta.get('title', 'Sin título'),
                     "empresa": oferta.get('company_name', 'Empresa oculta'),
                     "ubicacion": oferta.get('location', 'Ubicación no especificada'),
+                    "plataforma": plataforma_limpia,
                     "enlace": enlace_final
                 })
             
@@ -81,13 +80,14 @@ def filtrar_ofertas(ofertas):
 def enviar_oferta_telegram(oferta):
     url = f"https://api.telegram.org/bot{TELEGRAM_TOKEN}/sendMessage"
     
-    # Formateamos el mensaje
-    texto = f"🚨 *Nueva Oferta: {oferta['titulo']}*\n"
-    texto += f"🏢 *Empresa:* {oferta['empresa']}\n"
-    texto += f"📍 *Ubicación:* {oferta['ubicacion']}\n"
-    texto += f"🔗 [Haz clic aquí para aplicar]({oferta['enlace']})"
+    # Formateamos el mensaje en HTML para que no se rompan los enlaces largos de LinkedIn/InfoJobs
+    # html.escape() protege caracteres como "<" o ">" si vienen en el título del trabajo
+    texto = f"🚨 <b>Nueva Oferta: {html.escape(oferta['titulo'])}</b>\n"
+    texto += f"🏢 <b>Empresa:</b> {html.escape(oferta['empresa'])}\n"
+    texto += f"📍 <b>Ubicación:</b> {html.escape(oferta['ubicacion'])}\n"
+    texto += f"🌐 <b>Plataforma:</b> {html.escape(oferta['plataforma'])}\n\n"
+    texto += f"🔗 <a href='{oferta['enlace']}'>Haz clic aquí para aplicar</a>"
     
-    # Teclado en línea
     teclado = {
         "inline_keyboard": [
             [
@@ -100,7 +100,7 @@ def enviar_oferta_telegram(oferta):
     payload = {
         "chat_id": CHAT_ID,
         "text": texto,
-        "parse_mode": "Markdown",
+        "parse_mode": "HTML", # Cambiado de Markdown a HTML (A prueba de balas)
         "reply_markup": json.dumps(teclado)
     }
     
@@ -111,7 +111,6 @@ def enviar_oferta_telegram(oferta):
     except Exception as e:
         print(f"Error al enviar a Telegram ({oferta['titulo']}): {e}")
 
-# --- EJECUCIÓN DEL SCRIPT ---
 if __name__ == "__main__":
     if not SERPAPI_KEY or not TELEGRAM_TOKEN or not CHAT_ID:
         print("¡ERROR! Faltan variables de entorno. Revisa tus Secrets en GitHub.")
