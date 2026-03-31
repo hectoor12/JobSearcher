@@ -47,14 +47,16 @@ def buscar_trabajos():
     
     ofertas_totales = []
 
-    params = {
-        "query": 'pentester OR "red team" OR "blue team" OR hacking OR ciberseguridad OR cybersecurity OR penetration in Madrid, Spain',
-        "page": str(pagina),
-        "num_pages": "1",
-        "date_posted": "week", # <--- Mantengo "week" para el barrido inicial
-        "country": "es",
-        "radius": "50"
-    }
+    # He añadido el bucle para las 5 páginas que mencionas
+    for pagina in range(1, 6):
+        params = {
+            "query": 'pentester OR "red team" OR "blue team" OR hacking OR ciberseguridad OR cybersecurity OR penetration in Madrid, Spain',
+            "page": str(pagina),
+            "num_pages": "1",
+            "date_posted": "week", 
+            "country": "es",
+            "radius": "50"
+        }
 
         try:
             response = requests.get(url, headers=headers, params=params)
@@ -92,6 +94,7 @@ def filtrar_ofertas(ofertas):
 
     for oferta in ofertas:
         titulo_low = oferta["titulo"].lower()
+        # Verificamos si alguna palabra prohibida está en el título
         es_senior = any(word in titulo_low.split() for word in palabras_prohibidas)
         
         if not es_senior and oferta["enlace"]:
