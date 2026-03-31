@@ -61,6 +61,7 @@ def buscar_trabajos():
         
         ofertas = []
         for j in results.get("jobs_results", []):
+            # Priorizamos el source_link, si no existe buscamos en apply_options
             link = j.get("source_link")
             if not link and j.get("apply_options"):
                 link = j.get("apply_options")[0].get("link")
@@ -123,7 +124,11 @@ def enviar_oferta_telegram(oferta):
         "parse_mode": "HTML",
         "reply_markup": {
             "inline_keyboard": [
-                [{"text": "🔗 Ver Oferta", "url": oferta['enlace']}]
+                [{"text": "🔗 Ver Oferta", "url": oferta['enlace']}],
+                [
+                    {"text": "✅ Aceptar", "callback_data": "aceptar"},
+                    {"text": "❌ Rechazar", "callback_data": "rechazar"}
+                ]
             ]
         }
     }
@@ -149,8 +154,8 @@ if __name__ == "__main__":
                 if not trabajo_ya_existe(job_id):
                     enviar_oferta_telegram(trabajo)
                     guardar_trabajo(job_id, trabajo)
-                    print(f"✅ Nueva oferta enviada: {trabajo['titulo']}")
+                    print(f"✅ Nueva oferta enviada y guardada: {trabajo['titulo']}")
                 else:
                     print(f"ℹ️ Oferta ya conocida (omitida): {trabajo['titulo']}")
     else:
-        print("Error: Faltan variables de entorno")
+        print("Error: Faltan variables de entorno (SERPAPI_KEY, TELEGRAM_TOKEN o TELEGRAM_CHAT_ID)")
