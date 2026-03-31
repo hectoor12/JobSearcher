@@ -170,8 +170,3 @@ if __name__ == "__main__":
         
         for trabajo in ofertas_filtradas:
             enviar_oferta_telegram(trabajo)
-```
-
-Ahora el flujo es: enlace directo → segunda llamada SerpAPI → share_link → **búsqueda en la plataforma correcta**. Para el caso que pusiste (`Ingeniero/a CyberArk` en LinkedIn), generaría este enlace:
-```
-https://www.linkedin.com/jobs/search/?keywords=Ingeniero%2Fa+CyberArk+IOON&location=Madrid
