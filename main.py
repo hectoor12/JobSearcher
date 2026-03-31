@@ -51,26 +51,17 @@ def filtrar_ofertas(ofertas):
             # --- EXTRACCIÓN BLINDADA DEL ENLACE ---
             enlace_final = None
             
-            # Intento 1: Enlaces directos a plataformas (LinkedIn, InfoJobs...)
-            opciones_aplicar = oferta.get("apply_options", [])
-            for opcion in opciones_aplicar:
+            # 1. Intentamos sacar el enlace directo y limpio a la plataforma (LinkedIn, Infojobs, etc.)
+            for opcion in oferta.get("apply_options", []):
                 link = opcion.get("link", "")
-                # Excluimos cualquier enlace que pase por los servidores de Google para ir a la fuente original
-                if link and "google.com" not in link:
+                if link and "google.com/search" not in link:
                     enlace_final = link
-                    break
+                    break # Tenemos el enlace directo, paramos.
             
-            # Intento 2: Construir el enlace perfecto hacia Google Jobs
+            # 2. Si Google esconde el enlace directo, usamos su enlace original
             if not enlace_final:
-                # SerpAPI ya nos da el ID limpio en 'job_id', no hace falta destripar la URL
-                job_id = oferta.get("job_id")
-                
-                if job_id:
-                    # La magia está en 'ibp=htl;jobs' y '#fpstate=tldetail' para forzar la tarjeta del empleo
-                    enlace_final = f"https://www.google.com/search?q=trabajos&ibp=htl;jobs#fpstate=tldetail&htidocid={job_id}"
-                else:
-                    # Intento 3: Fallback en caso extremo
-                    enlace_final = oferta.get("share_link", "https://www.google.com/search?q=trabajos")
+                # Usamos el enlace largo original. Como ahora Telegram usa HTML, no se romperá.
+                enlace_final = oferta.get("share_link", "Enlace no disponible")
 
             # --- EXTRACCIÓN DE LA PLATAFORMA ---
             plataforma_limpia = oferta.get('via', 'Desconocida').replace("via ", "").replace("vía ", "")
