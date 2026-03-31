@@ -18,7 +18,7 @@ def buscar_trabajos():
             "location": "Madrid, Spain",
             "gl": "es",
             "hl": "es",
-            "chips": "date_posted:week"
+            "chips": "date_posted:day"
         })
         
         ofertas = []
