@@ -49,8 +49,7 @@ def buscar_trabajos():
 
     # Configuración para una sola petición (Página 1)
     params = {
-        "query": 'pentester OR "red team" OR "blue team" OR hacking OR ciberseguridad OR cybersecurity OR penetration in Madrid, Spain',
-        "page": "1",
+        "query": 'pentester OR "red team" OR "blue team" OR hacking OR "hacking ético" OR "hacker ético" OR ciberseguridad OR cybersecurity OR penetration OR "offensive security" OR "seguridad ofensiva" OR "vulnerability assessor" OR "analista de vulnerabilidades" OR "security consultant" OR "consultor de seguridad" OR "auditor de seguridad" OR "application security" OR "it security" OR "seguridad informática" Madrid',
         "num_pages": "1",
         "date_posted": "week", 
         "country": "es",
