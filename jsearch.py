@@ -73,13 +73,13 @@ def buscar_trabajos():
 
     # 1. Tu lista fija de términos (7 elementos)
     terminos_busqueda = [
-        'pentester OR "red team" Madrid -senior -sr -lead -manager -director',
-        '"blue team" OR "vulnerability assessor" OR "analista de vulnerabilidades" Madrid -senior -sr -lead -manager -director',
-        'hacking OR "hacking ético" OR "hacker ético" Madrid -senior -sr -lead -manager -director',
-        'ciberseguridad OR cybersecurity OR "seguridad informática" Madrid -senior -sr -lead -manager -director',
-        'penetration OR "offensive security" OR "seguridad ofensiva" Madrid -senior -sr -lead -manager -director',
-        '"security consultant" OR "consultor de seguridad" OR "auditor de seguridad" Madrid -senior -sr -lead -manager -director',
-        '"application security" OR "it security" Madrid -senior -sr -lead -manager -director'
+        'pentester OR "red team" Madrid',
+        '"blue team" OR "vulnerability assessor" OR "analista de vulnerabilidades" Madrid',
+        'hacking OR "hacking ético" OR "hacker ético" Madrid',
+        'ciberseguridad OR cybersecurity OR "seguridad informática" Madrid',
+        'penetration OR "offensive security" OR "seguridad ofensiva" Madrid',
+        '"security consultant" OR "consultor de seguridad" OR "auditor de seguridad" Madrid',
+        '"application security" OR "it security" Madrid'
     ]
 
     # 2. Elegimos el término en ESTRICTO ORDEN secuencial
@@ -90,8 +90,7 @@ def buscar_trabajos():
         "query": query_secuencial,
         "num_pages": "1",
         "date_posted": "today", 
-        "country": "es",
-        "radius": "50"
+        "country": "es"
     }
 
     try:
