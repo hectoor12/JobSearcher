@@ -3,7 +3,6 @@ import requests
 import html
 import json
 import firebase_admin
-import random
 from firebase_admin import credentials, firestore
 
 # --- CREDENCIALES ---
@@ -17,7 +16,6 @@ if FIREBASE_JSON_STR:
     try:
         cred_dict = json.loads(FIREBASE_JSON_STR)
         cred = credentials.Certificate(cred_dict)
-        # Verifica si ya se inicializó para evitar errores en ejecuciones repetidas
         if not firebase_admin._apps:
             firebase_admin.initialize_app(cred)
         db = firestore.client()
@@ -40,7 +38,30 @@ def guardar_trabajo(job_id, oferta):
         "fecha_registro": firestore.SERVER_TIMESTAMP
     })
 
-# --- 1. BÚSQUEDA (PÁGINA 1: ROTACIÓN + SOLO HOY) ---
+# --- NUEVA FUNCIÓN SECUENCIAL ---
+def obtener_siguiente_query(terminos):
+    """Guarda y lee de Firebase el índice por el que vamos para ir en orden"""
+    doc_ref = db.collection("configuracion_bot").document("estado_busqueda")
+    doc = doc_ref.get()
+    
+    # Si existe el documento, sacamos el índice. Si no, empezamos en 0.
+    if doc.exists:
+        indice_actual = doc.to_dict().get("indice", 0)
+    else:
+        indice_actual = 0
+        
+    # El índice que usaremos en esta ejecución
+    indice_a_usar = indice_actual
+    
+    # Calculamos el siguiente índice. El "% len(terminos)" hace que vuelva a 0 cuando llegue al final
+    siguiente_indice = (indice_actual + 1) % len(terminos)
+    
+    # Guardamos el siguiente índice para la próxima vez que se ejecute el script
+    doc_ref.set({"indice": siguiente_indice})
+    
+    return terminos[indice_a_usar], indice_a_usar + 1 # Devolvemos también el número para imprimirlo
+
+# --- 1. BÚSQUEDA (PÁGINA 1: SECUENCIAL + SOLO HOY) ---
 def buscar_trabajos():
     url = "https://jsearch.p.rapidapi.com/search"
     headers = {
@@ -50,7 +71,7 @@ def buscar_trabajos():
     
     ofertas_totales = []
 
-    # 1. Agrupamos tus términos en bloques para no saturar una sola búsqueda
+    # 1. Tu lista fija de términos (7 elementos)
     terminos_busqueda = [
         'pentester OR "red team" Madrid',
         '"blue team" OR "vulnerability assessor" OR "analista de vulnerabilidades" Madrid',
@@ -61,13 +82,12 @@ def buscar_trabajos():
         '"application security" OR "it security" Madrid'
     ]
 
-    # 2. Elegimos un bloque al azar
-    query_aleatoria = random.choice(terminos_busqueda)
-    print(f"🔍 Búsqueda de esta ronda: {query_aleatoria}")
+    # 2. Elegimos el término en ESTRICTO ORDEN secuencial
+    query_secuencial, numero_ronda = obtener_siguiente_query(terminos_busqueda)
+    print(f"🔍 Búsqueda de esta ronda ({numero_ronda}/{len(terminos_busqueda)}): {query_secuencial}")
 
-    # 3. Configuramos los parámetros pidiendo solo lo de "hoy"
     params = {
-        "query": query_aleatoria,
+        "query": query_secuencial,
         "num_pages": "1",
         "date_posted": "today", 
         "country": "es",
@@ -105,7 +125,6 @@ def filtrar_ofertas(ofertas):
 
     for oferta in ofertas:
         titulo_low = oferta["titulo"].lower()
-        # Filtro simple por palabras prohibidas
         es_senior = any(word in titulo_low.split() for word in palabras_prohibidas)
         
         if not es_senior and oferta["enlace"]:
