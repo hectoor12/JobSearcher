@@ -3,6 +3,7 @@ import requests
 import html
 import json
 import firebase_admin
+import random
 from firebase_admin import credentials, firestore
 
 # --- CREDENCIALES ---
@@ -16,7 +17,9 @@ if FIREBASE_JSON_STR:
     try:
         cred_dict = json.loads(FIREBASE_JSON_STR)
         cred = credentials.Certificate(cred_dict)
-        firebase_admin.initialize_app(cred)
+        # Verifica si ya se inicializó para evitar errores en ejecuciones repetidas
+        if not firebase_admin._apps:
+            firebase_admin.initialize_app(cred)
         db = firestore.client()
     except Exception as e:
         print(f"Error al inicializar Firebase: {e}")
@@ -37,7 +40,7 @@ def guardar_trabajo(job_id, oferta):
         "fecha_registro": firestore.SERVER_TIMESTAMP
     })
 
-# --- 1. BÚSQUEDA (SOLO PÁGINA 1) ---
+# --- 1. BÚSQUEDA (PÁGINA 1: ROTACIÓN + SOLO HOY) ---
 def buscar_trabajos():
     url = "https://jsearch.p.rapidapi.com/search"
     headers = {
@@ -47,11 +50,26 @@ def buscar_trabajos():
     
     ofertas_totales = []
 
-    # Configuración para una sola petición (Página 1)
+    # 1. Agrupamos tus términos en bloques para no saturar una sola búsqueda
+    terminos_busqueda = [
+        'pentester OR "red team" Madrid',
+        '"blue team" OR "vulnerability assessor" OR "analista de vulnerabilidades" Madrid',
+        'hacking OR "hacking ético" OR "hacker ético" Madrid',
+        'ciberseguridad OR cybersecurity OR "seguridad informática" Madrid',
+        'penetration OR "offensive security" OR "seguridad ofensiva" Madrid',
+        '"security consultant" OR "consultor de seguridad" OR "auditor de seguridad" Madrid',
+        '"application security" OR "it security" Madrid'
+    ]
+
+    # 2. Elegimos un bloque al azar
+    query_aleatoria = random.choice(terminos_busqueda)
+    print(f"🔍 Búsqueda de esta ronda: {query_aleatoria}")
+
+    # 3. Configuramos los parámetros pidiendo solo lo de "hoy"
     params = {
-        "query": 'pentester OR "red team" OR "blue team" OR hacking OR "hacking ético" OR "hacker ético" OR ciberseguridad OR cybersecurity OR penetration OR "offensive security" OR "seguridad ofensiva" OR "vulnerability assessor" OR "analista de vulnerabilidades" OR "security consultant" OR "consultor de seguridad" OR "auditor de seguridad" OR "application security" OR "it security" OR "seguridad informática" Madrid',
+        "query": query_aleatoria,
         "num_pages": "1",
-        "date_posted": "week", 
+        "date_posted": "today", 
         "country": "es",
         "radius": "50"
     }
