@@ -39,29 +39,12 @@ def guardar_trabajo(job_id, oferta):
         "fecha_registro": firestore.SERVER_TIMESTAMP
     })
 
-# --- FUNCIÓN SECUENCIAL (reutiliza el mismo mecanismo de jsearch.py) ---
-def obtener_siguiente_query(terminos):
-    """Guarda y lee de Firebase el índice por el que vamos para ir en orden."""
-    doc_ref = db.collection("configuracion_bot").document("estado_busqueda_linkedin")
-    doc = doc_ref.get()
-
-    if doc.exists:
-        indice_actual = doc.to_dict().get("indice", 0)
-    else:
-        indice_actual = 0
-
-    indice_a_usar = indice_actual
-    siguiente_indice = (indice_actual + 1) % len(terminos)
-    doc_ref.set({"indice": siguiente_indice})
-
-    return terminos[indice_a_usar], indice_a_usar + 1
-
-
-# --- 1. BÚSQUEDA (LinkedIn Job Search API) ---
+# --- 1. BÚSQUEDA (LinkedIn Job Search API - TODOS los términos en 1 sola llamada) ---
 def buscar_trabajos():
     ofertas_totales = []
 
-    # Lista de términos de búsqueda (adaptada a LinkedIn)
+    # Todos los términos combinados con OR en un solo title_filter
+    # Así usamos 1 sola petición a la API en vez de 7
     terminos_busqueda = [
         "pentester",
         "red team",
@@ -71,9 +54,9 @@ def buscar_trabajos():
         "cybersecurity",
         "penetration tester",
     ]
+    title_filter = " OR ".join(terminos_busqueda)
 
-    query_secuencial, numero_ronda = obtener_siguiente_query(terminos_busqueda)
-    print(f"🔍 Búsqueda LinkedIn ronda ({numero_ronda}/{len(terminos_busqueda)}): {query_secuencial}")
+    print(f"🔍 Búsqueda LinkedIn (todos los términos en 1 llamada): {title_filter}")
 
     conn = http.client.HTTPSConnection("linkedin-job-search-api.p.rapidapi.com")
 
@@ -83,8 +66,8 @@ def buscar_trabajos():
         "Content-Type": "application/json"
     }
 
-    # Codificamos el título para la URL
-    title_encoded = urllib.parse.quote(query_secuencial)
+    # Codificamos los parámetros para la URL
+    title_encoded = urllib.parse.quote(title_filter)
     location_encoded = urllib.parse.quote("Spain")
     endpoint = f"/active-jb-24h?offset=0&title_filter={title_encoded}&location_filter={location_encoded}&description_type=text"
 
