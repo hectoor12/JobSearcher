@@ -175,11 +175,22 @@ if __name__ == "__main__":
 
     print(f"🎯 Total tras filtros: {len(filtradas)}")
 
+    nuevas = 0
+    duplicadas = 0
+    sin_id = 0
+
     for job in filtradas:
         job_id = job["id"]
         if job_id and not trabajo_ya_existe(job_id):
             enviar_oferta_telegram(job)
             guardar_trabajo(job_id, job)
-            print(f"📩 Enviada: {job['titulo']}")
-        elif not job_id:
+            print(f"📩 Enviada: {job['titulo']} en {job['empresa']}")
+            nuevas += 1
+        elif job_id:
+            print(f"⏭️ Ya existe en BD: {job['titulo']} en {job['empresa']}")
+            duplicadas += 1
+        else:
             print(f"⚠️ Oferta sin ID, omitida: {job['titulo']}")
+            sin_id += 1
+
+    print(f"\n📊 Resumen: {nuevas} nuevas enviadas | {duplicadas} ya en BD | {sin_id} sin ID")
