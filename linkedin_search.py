@@ -102,16 +102,26 @@ def buscar_trabajos():
             print(f"📦 LinkedIn: {len(jobs)} ofertas encontradas.")
 
             for j in jobs:
-                job_id = j.get("job_id") or j.get("id") or j.get("linkedin_job_id", "")
+                job_id = j.get("id", "")
+                # Ubicación: usamos locations_derived si existe, sino addressLocality
+                ubicacion = ""
+                locations_derived = j.get("locations_derived", [])
+                if locations_derived:
+                    ubicacion = ", ".join(locations_derived)
+                elif j.get("locations_raw"):
+                    for loc in j.get("locations_raw", []):
+                        addr = loc.get("address", {})
+                        ubicacion = addr.get("addressLocality", addr.get("addressCountry", ""))
+
                 ofertas_totales.append({
                     "id": str(job_id) if job_id else "",
-                    "titulo": j.get("title", j.get("job_title", "")),
-                    "empresa": j.get("company", j.get("company_name", "Empresa oculta")),
-                    "ubicacion": j.get("location", j.get("job_location", "")),
-                    "descripcion": j.get("description", j.get("job_description", "")),
-                    "enlace": j.get("url", j.get("job_url", j.get("apply_url", ""))),
+                    "titulo": j.get("title", ""),
+                    "empresa": j.get("organization", "Empresa oculta"),
+                    "ubicacion": ubicacion,
+                    "descripcion": j.get("description_text", ""),
+                    "enlace": j.get("url", ""),
                     "plataforma": "LinkedIn",
-                    "es_remoto": j.get("is_remote", False)
+                    "es_remoto": j.get("remote_derived", False)
                 })
         else:
             print(f"❌ Error API LinkedIn: {res.status} - {raw_data.decode('utf-8')}")
