@@ -86,7 +86,7 @@ def buscar_trabajos():
     # Codificamos el título para la URL
     title_encoded = urllib.parse.quote(query_secuencial)
     location_encoded = urllib.parse.quote("Spain")
-    endpoint = f"/active-jb-1h?offset=0&title_filter={title_encoded}&location_filter={location_encoded}&description_type=text"
+    endpoint = f"/active-jb-24h?offset=0&title_filter={title_encoded}&location_filter={location_encoded}&description_type=text"
 
     try:
         conn.request("GET", endpoint, headers=headers)
