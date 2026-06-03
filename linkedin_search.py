@@ -162,10 +162,27 @@ def enviar_oferta_telegram(oferta):
 
     try:
         r = requests.post(url, json=payload)
+        
+        # Manejo de Rate Limit de Telegram (429)
+        if r.status_code == 429:
+            import time
+            try:
+                error_data = r.json()
+                retry_after = error_data.get("parameters", {}).get("retry_after", 30)
+            except:
+                retry_after = 30
+            print(f"⚠️ Rate Limit de Telegram. Esperando {retry_after} segundos...")
+            time.sleep(retry_after)
+            r = requests.post(url, json=payload) # Reintento
+            
         if r.status_code != 200:
             print(f"❌ Error Telegram ({r.status_code}): {r.text}")
+            return False
+            
+        return True
     except Exception as e:
         print(f"Error enviando a Telegram: {e}")
+        return False
 
 
 # --- EJECUCIÓN ---
@@ -182,10 +199,13 @@ if __name__ == "__main__":
     for job in filtradas:
         job_id = job["id"]
         if job_id and not trabajo_ya_existe(job_id):
-            enviar_oferta_telegram(job)
-            guardar_trabajo(job_id, job)
-            print(f"📩 Enviada: {job['titulo']} en {job['empresa']}")
-            nuevas += 1
+            exito = enviar_oferta_telegram(job)
+            if exito:
+                guardar_trabajo(job_id, job)
+                print(f"📩 Enviada: {job['titulo']} en {job['empresa']}")
+                nuevas += 1
+            else:
+                print(f"⚠️ Fallo al enviar a Telegram, no se guardó en BD: {job['titulo']}")
         elif job_id:
             print(f"⏭️ Ya existe en BD: {job['titulo']} en {job['empresa']}")
             duplicadas += 1
