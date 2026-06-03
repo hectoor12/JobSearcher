@@ -7,7 +7,7 @@ import firebase_admin
 from firebase_admin import credentials, firestore
 
 # --- CREDENCIALES (desde variables de entorno, igual que los demás scripts) ---
-RAPIDAPI_KEY = os.environ.get("RAPIDAPI_KEY")
+RAPIDAPI_KEY = os.environ.get("RAPIDAPI_KEY2")
 TELEGRAM_TOKEN = os.environ.get("TELEGRAM_TOKEN")
 CHAT_ID = os.environ.get("TELEGRAM_CHAT_ID")
 FIREBASE_JSON_STR = os.environ.get("FIREBASE_CREDENTIALS")
