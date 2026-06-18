@@ -6,7 +6,7 @@ import urllib.parse
 import firebase_admin
 from firebase_admin import credentials, firestore
 
-# --- CREDENCIALES (desde variables de entorno, igual que los demás scripts) ---
+# --- CREDENCIALES (desde variables de entorno) ---
 RAPIDAPI_KEY = os.environ.get("RAPIDAPI_KEY3")
 TELEGRAM_TOKEN = os.environ.get("TELEGRAM_TOKEN")
 CHAT_ID = os.environ.get("TELEGRAM_CHAT_ID")
@@ -21,10 +21,10 @@ if FIREBASE_JSON_STR:
             firebase_admin.initialize_app(cred)
         db = firestore.client()
     except Exception as e:
-        print(f"Error al inicializar Firebase: {e}")
+        print(f"❌ Error al inicializar Firebase: {e}")
         exit()
 else:
-    print("Error: No se encontró FIREBASE_CREDENTIALS")
+    print("❌ Error: No se encontró FIREBASE_CREDENTIALS")
     exit()
 
 # --- FUNCIONES DE BASE DE DATOS ---
@@ -39,24 +39,29 @@ def guardar_trabajo(job_id, oferta):
         "fecha_registro": firestore.SERVER_TIMESTAMP
     })
 
-# --- 1. BÚSQUEDA (LinkedIn Job Search API - TODOS los términos en 1 sola llamada) ---
+# --- 1. BÚSQUEDA (Adaptado a la nueva documentación de la API) ---
 def buscar_trabajos():
     ofertas_totales = []
 
-    # Todos los términos combinados con OR en un solo title_filter
-    # Así usamos 1 sola petición a la API en vez de 7
+    # Adaptación para 'title_advanced':
+    # Las frases de varias palabras DEBEN ir entre comillas simples ('red team')
+    # Se unen con el operador lógico OR (|)
     terminos_busqueda = [
         "pentester",
-        "red team",
-        "blue team",
-        "hacking ético",
+        "'red team'",
+        "'blue team'",
+        "'hacking ético'",
         "ciberseguridad",
         "cybersecurity",
-        "penetration tester",
+        "'penetration tester'",
+        "SOC",
+        "'SOC Analyst'",
+        "'Security Analyst'",
+        "'Threat Monitoring'"
     ]
-    title_filter = " OR ".join(terminos_busqueda)
+    title_filter = " | ".join(terminos_busqueda)
 
-    print(f"🔍 Búsqueda LinkedIn (todos los términos en 1 llamada): {title_filter}")
+    print(f"🔍 Búsqueda LinkedIn (Advanced): {title_filter}")
 
     conn = http.client.HTTPSConnection("linkedin-job-search-api.p.rapidapi.com")
 
@@ -69,7 +74,13 @@ def buscar_trabajos():
     # Codificamos los parámetros para la URL
     title_encoded = urllib.parse.quote(title_filter)
     location_encoded = urllib.parse.quote("Spain")
-    endpoint = f"/active-jb-24h?offset=0&title_filter={title_encoded}&location_filter={location_encoded}&description_type=text"
+    
+    # Construcción del nuevo endpoint basado en la documentación:
+    # - Endpoint principal asumido: /active-jb
+    # - time_frame=24h (reemplaza a active-jb-24h)
+    # - title_advanced (reemplaza a title_filter, soporta operadores lógicos)
+    # - location (reemplaza a location_filter)
+    endpoint = f"/active-jb?time_frame=24h&title_advanced={title_encoded}&location={location_encoded}"
 
     try:
         conn.request("GET", endpoint, headers=headers)
@@ -79,13 +90,14 @@ def buscar_trabajos():
         if res.status == 200:
             data = json.loads(raw_data.decode("utf-8"))
 
-            # La API puede devolver una lista directa o un objeto con clave
+            # La API puede devolver una lista directa o un objeto con clave 'data' o 'results'
             jobs = data if isinstance(data, list) else data.get("data", data.get("results", []))
 
             print(f"📦 LinkedIn: {len(jobs)} ofertas encontradas.")
 
             for j in jobs:
                 job_id = j.get("id", "")
+                
                 # Ubicación: usamos locations_derived si existe, sino addressLocality
                 ubicacion = ""
                 locations_derived = j.get("locations_derived", [])
@@ -96,15 +108,21 @@ def buscar_trabajos():
                         addr = loc.get("address", {})
                         ubicacion = addr.get("addressLocality", addr.get("addressCountry", ""))
 
+                # Algunas APIs nuevas cambian 'remote_derived' por 'ai_work_arrangement'. 
+                # Mantenemos un fallback por si acaso.
+                es_remoto = j.get("remote_derived", False)
+                if not es_remoto and "Remote" in str(j.get("ai_work_arrangement", "")):
+                    es_remoto = True
+
                 ofertas_totales.append({
                     "id": str(job_id) if job_id else "",
                     "titulo": j.get("title", ""),
                     "empresa": j.get("organization", "Empresa oculta"),
                     "ubicacion": ubicacion,
-                    "descripcion": j.get("description_text", ""),
+                    "descripcion": j.get("description_text", j.get("description", "")),
                     "enlace": j.get("url", ""),
                     "plataforma": "LinkedIn",
-                    "es_remoto": j.get("remote_derived", False)
+                    "es_remoto": es_remoto
                 })
         else:
             print(f"❌ Error API LinkedIn: {res.status} - {raw_data.decode('utf-8')}")
@@ -134,7 +152,7 @@ def filtrar_ofertas(ofertas):
 
 # --- 3. ENVÍO A TELEGRAM ---
 def enviar_oferta_telegram(oferta):
-    import requests  # Solo se usa aquí para enviar a Telegram
+    import requests  # Importado localmente como lo tenías
 
     url = f"https://api.telegram.org/bot{TELEGRAM_TOKEN}/sendMessage"
 
@@ -181,7 +199,7 @@ def enviar_oferta_telegram(oferta):
             
         return True
     except Exception as e:
-        print(f"Error enviando a Telegram: {e}")
+        print(f"❌ Error enviando a Telegram: {e}")
         return False
 
 
