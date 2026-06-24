@@ -57,7 +57,16 @@ def buscar_trabajos():
         "SOC",
         "'SOC Analyst'",
         "'Security Analyst'",
-        "'Threat Monitoring'"
+        "'Threat Monitoring'",
+        # --- Administrador de Sistemas ---
+        "'administrador de sistemas'",
+        "sysadmin",
+        "'system administrator'",
+        # --- Inteligencia Artificial ---
+        "IA",
+        "AI",
+        "'inteligencia artificial'",
+        "'artificial intelligence'"
     ]
     title_filter = " | ".join(terminos_busqueda)
 
