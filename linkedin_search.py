@@ -72,6 +72,8 @@ KEYWORDS = [
     "'SOC Analyst'",
     "'Security Analyst'",
     "'Threat Monitoring'",
+    "'Threat Intelligence'",
+    "'Cyber Threat Intelligence'",
     # --- Administrador de Sistemas ---
     "'administrador de sistemas'",
     "'administración de sistemas'",
