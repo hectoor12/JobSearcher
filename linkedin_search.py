@@ -64,6 +64,8 @@ KEYWORDS = [
     "'hacking ético'",
     "ciberseguridad",
     "cybersecurity",
+    "'cyber security'",
+    "'seguridad informática'",
     "'penetration tester'",
     "SOC",
     "'SOC Analyst'",
@@ -418,6 +420,9 @@ def filtrar_ofertas(ofertas):
         # Validar que realmente contenga alguna de las palabras clave de búsqueda
         # (quitamos las comillas simples que usamos para la API de LinkedIn)
         keywords_limpias = [kw.replace("'", "").lower() for kw in KEYWORDS]
+        # Añadimos palabras comodín que queremos aceptar pero por las que no queremos buscar en LinkedIn (para evitar guardias de seguridad físicos)
+        keywords_limpias.extend(["security", "seguridad"])
+        
         tiene_keyword = False
         for kw in keywords_limpias:
             # Usamos \b para que coincida con la palabra completa y no como parte de otra (ej: "ia" dentro de "oficial")
