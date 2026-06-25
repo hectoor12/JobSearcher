@@ -533,9 +533,8 @@ def main_loop():
         except Exception as e:
             print(f"❌ Error en el ciclo principal: {e}", file=sys.stderr)
         
-        # Esperar 5 minutos antes del próximo escaneo
-        print("💤 Esperando 5 minutos para el próximo ciclo...\n")
-        time.sleep(300)
+        print("🔄 Reiniciando el ciclo de búsqueda de inmediato...\n")
+        time.sleep(2)
 
 
 if __name__ == "__main__":
