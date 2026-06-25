@@ -59,25 +59,25 @@ BASE_JOB_URL = "https://www.linkedin.com/jobs-guest/jobs/api/jobPosting/{}"
 # Cada keyword genera 2 queries: Remoto España + Madrid (sin filtro de modalidad)
 KEYWORDS = [
     "pentester",
-    "red team",
-    "blue team",
-    "hacking ético",
+    "'red team'",
+    "'blue team'",
+    "'hacking ético'",
     "ciberseguridad",
     "cybersecurity",
-    "penetration tester",
+    "'penetration tester'",
     "SOC",
-    "SOC Analyst",
-    "Security Analyst",
-    "Threat Monitoring",
+    "'SOC Analyst'",
+    "'Security Analyst'",
+    "'Threat Monitoring'",
     # --- Administrador de Sistemas ---
-    "administrador de sistemas",
+    "'administrador de sistemas'",
     "sysadmin",
-    "system administrator",
+    "'system administrator'",
     # --- Inteligencia Artificial ---
-    "inteligencia artificial",
-    "artificial intelligence",
     "IA",
     "AI",
+    "'inteligencia artificial'",
+    "'artificial intelligence'"
 ]
 
 # --- ZONAS MADRID (para presencial o híbrido) ---
