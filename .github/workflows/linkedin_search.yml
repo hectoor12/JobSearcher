@@ -21,15 +21,12 @@ jobs:
       - name: Instalar dependencias
         run: |
           python -m pip install --upgrade pip
-          # Instalamos lo necesario: requests, firebase-admin y cryptography para descifrar
-          pip install requests firebase-admin cryptography
+          pip install requests firebase-admin
 
       - name: Ejecutar el script de búsqueda (LinkedIn)
-        # Inyectamos los Secrets configurados en el repo de GitHub
         env:
-          ENCRYPTION_KEY: ${{ secrets.ENCRYPTION_KEY }}
           TELEGRAM_TOKEN: ${{ secrets.TELEGRAM_TOKEN }}
           TELEGRAM_CHAT_ID: ${{ secrets.TELEGRAM_CHAT_ID }}
           FIREBASE_CREDENTIALS: ${{ secrets.FIREBASE_CREDENTIALS }}
-        run: python linkedin_search.py
+        run: python -u linkedin_search.py
 

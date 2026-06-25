@@ -130,11 +130,11 @@ def guardar_trabajo(job_id, oferta):
 # SCRAPER — GUEST API DE LINKEDIN
 # ═══════════════════════════════════════════════════════════════
 
-def fetch_url(url, retries=1):
+def fetch_url(url, retries=3):
     """HTTP request con retry y rate limiting.
 
     Usa urllib.request (stdlib) — no necesita requests ni http.client.
-    Timeout de 8s por petición. Retry con 2s de backoff.
+    Timeout de 8s por petición. Retry con backoff para evitar 429.
     """
     for attempt in range(retries + 1):
         try:
@@ -143,7 +143,13 @@ def fetch_url(url, retries=1):
                 return resp.read().decode("utf-8", errors="replace")
         except Exception as e:
             if attempt < retries:
-                time.sleep(2)  # backoff fijo de 2s entre intentos
+                # Si nos bloquean por muchas peticiones (429), esperamos más
+                if hasattr(e, 'code') and e.code == 429:
+                    espera = 5 + (attempt * 5)
+                    print(f"⚠️ 429 Too Many Requests. Esperando {espera}s...", file=sys.stderr)
+                    time.sleep(espera)
+                else:
+                    time.sleep(2)
             else:
                 print(f"Error fetching {url}: {e}", file=sys.stderr)
                 return ""
@@ -256,7 +262,7 @@ def search_jobs(params, max_pages=2, deadline=None):
 
         if new_count == 0:  # página sin resultados nuevos → fin
             break
-        time.sleep(0.3)     # rate limiting: 300ms entre páginas
+        time.sleep(1.5)     # rate limiting: 1.5s entre páginas
 
     return all_jobs
 
@@ -362,6 +368,7 @@ def buscar_trabajos():
 
                 # Obtener detalles (descripción, modo trabajo)
                 details = get_job_details(job["id"])
+                time.sleep(0.5)  # rate limiting: 500ms entre llamadas de detalle
 
                 # Saltar ofertas cerradas
                 if details.get("closed"):
@@ -384,7 +391,7 @@ def buscar_trabajos():
                     "work_mode": work_mode,
                 })
 
-        time.sleep(0.3)  # delay entre keywords
+        time.sleep(2.0)  # delay entre keywords
 
     print(f"📦 LinkedIn Guest API: {len(ofertas_totales)} ofertas encontradas en total.")
     return ofertas_totales
