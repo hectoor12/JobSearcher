@@ -458,8 +458,9 @@ def filtrar_ofertas(ofertas):
         
         # Filtros de ubicación:
         # - Si es remoto: Cualquier lugar de España (asumimos que todo lo que devuelve es de España por las queries)
-        # - Si es presencial o híbrido: Solo zonas de Madrid
+        # - Si es presencial o híbrido: Solo zonas de Madrid, O si la ubicación es genéricamente "España"
         en_madrid = any(ciudad in ubicacion_low for ciudad in ZONAS_MADRID)
+        es_solo_espana = ubicacion_low.strip() in ("españa", "spain")
 
         if es_remoto:
             oferta["modalidad"] = "🏠 Remoto / Teletrabajo"
@@ -467,7 +468,7 @@ def filtrar_ofertas(ofertas):
                 ofertas_validas.append(oferta)
             else:
                 print(f"❌ Rechazada (Sin enlace): {oferta['titulo']}")
-        elif en_madrid:
+        elif en_madrid or es_solo_espana:
             if es_hibrido:
                 oferta["modalidad"] = "🏠🏢 Híbrido"
             else:
