@@ -1,13 +1,24 @@
+"""
+LinkedIn Jobs Guest API scraper.
+
+Uses LinkedIn's public (no-auth) Guest API to scrape job postings.
+Based on https://github.com/hendrixfreire/linkedin-job-scraper
+
+No API keys needed — uses LinkedIn's public HTML endpoints.
+Stdlib only, no external dependencies for scraping.
+"""
 import os
-import http.client
+import re
+import sys
 import html
 import json
-import urllib.parse
+import time
 import firebase_admin
 from firebase_admin import credentials, firestore
+from urllib.request import Request, urlopen
+from urllib.parse import urlencode
 
 # --- CREDENCIALES (desde variables de entorno) ---
-RAPIDAPI_KEY = os.environ.get("RAPIDAPI_KEY3")
 TELEGRAM_TOKEN = os.environ.get("TELEGRAM_TOKEN")
 CHAT_ID = os.environ.get("TELEGRAM_CHAT_ID")
 FIREBASE_JSON_STR = os.environ.get("FIREBASE_CREDENTIALS")
@@ -27,10 +38,85 @@ else:
     print("❌ Error: No se encontró FIREBASE_CREDENTIALS")
     exit()
 
-# --- FUNCIONES DE BASE DE DATOS ---
+
+# ═══════════════════════════════════════════════════════════════
+# CONFIGURACIÓN DE BÚSQUEDA
+# ═══════════════════════════════════════════════════════════════
+
+# --- URLs de la API Guest de LinkedIn ---
+BASE_SEARCH_URL = "https://www.linkedin.com/jobs-guest/jobs/api/seeMoreJobPostings/search"
+BASE_JOB_URL = "https://www.linkedin.com/jobs-guest/jobs/api/jobPosting/{}"
+
+# --- FILTROS API ---
+# f_TPR: tiempo de publicación (r86400=24h, r604800=semana, r2592000=mes)
+# f_E: nivel experiencia (1=Intern, 2=Entry, 3=Associate, 4=Mid-Senior,
+#       5=Director, 6=Executive)
+# f_WT: tipo trabajo (1=Presencial, 2=Remoto, 3=Híbrido)
+# sortBy=DD: ordenar por fecha descendente (más recientes primero)
+
+# --- KEYWORDS ---
+# Tus términos de búsqueda actuales, adaptados al formato Guest API.
+# Cada keyword genera 2 queries: Remoto España + Madrid (sin filtro de modalidad)
+KEYWORDS = [
+    "pentester",
+    "red team",
+    "blue team",
+    "hacking ético",
+    "ciberseguridad",
+    "cybersecurity",
+    "penetration tester",
+    "SOC",
+    "SOC Analyst",
+    "Security Analyst",
+    "Threat Monitoring",
+    # --- Administrador de Sistemas ---
+    "administrador de sistemas",
+    "sysadmin",
+    "system administrator",
+    # --- Inteligencia Artificial ---
+    "inteligencia artificial",
+    "artificial intelligence",
+    "IA",
+    "AI",
+]
+
+# --- ZONAS MADRID (para presencial o híbrido) ---
+ZONAS_MADRID = [
+    "madrid", "alcobendas", "pozuelo", "las rozas", 
+    "getafe", "leganés", "móstoles", "fuenlabrada",
+]
+
+# --- PALABRAS PROHIBIDAS EN TÍTULO (filtro senioridad) ---
+PALABRAS_PROHIBIDAS = [
+    "senior", "sr", "lead", "principal", "manager",
+    "director", "architect", "arquitecto", "expert",
+]
+
+# --- KEYWORDS DE FLEXIBILIDAD ---
+KEYWORDS_FLEXIBILIDAD = [
+    "remoto", "remote", "híbrido", "hibrido",
+    "hybrid", "teletrabajo",
+]
+
+# --- HTTP HEADERS ---
+# User-Agent de Chrome para evitar ser bloqueado como bot
+HEADERS = {
+    "User-Agent": "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) "
+                  "AppleWebKit/537.36 (KHTML, like Gecko) "
+                  "Chrome/126.0.0.0 Safari/537.36",
+    "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8",
+    "Accept-Language": "es-ES,es;q=0.9,en;q=0.5",
+}
+
+
+# ═══════════════════════════════════════════════════════════════
+# FUNCIONES DE BASE DE DATOS
+# ═══════════════════════════════════════════════════════════════
+
 def trabajo_ya_existe(job_id):
     doc_ref = db.collection("ofertas_enviadas").document(job_id)
     return doc_ref.get().exists
+
 
 def guardar_trabajo(job_id, oferta):
     db.collection("ofertas_enviadas").document(job_id).set({
@@ -39,129 +125,331 @@ def guardar_trabajo(job_id, oferta):
         "fecha_registro": firestore.SERVER_TIMESTAMP
     })
 
-# --- 1. BÚSQUEDA (Adaptado a la nueva documentación de la API) ---
+
+# ═══════════════════════════════════════════════════════════════
+# SCRAPER — GUEST API DE LINKEDIN
+# ═══════════════════════════════════════════════════════════════
+
+def fetch_url(url, retries=1):
+    """HTTP request con retry y rate limiting.
+
+    Usa urllib.request (stdlib) — no necesita requests ni http.client.
+    Timeout de 8s por petición. Retry con 2s de backoff.
+    """
+    for attempt in range(retries + 1):
+        try:
+            req = Request(url, headers=HEADERS)
+            with urlopen(req, timeout=8) as resp:
+                return resp.read().decode("utf-8", errors="replace")
+        except Exception as e:
+            if attempt < retries:
+                time.sleep(2)  # backoff fijo de 2s entre intentos
+            else:
+                print(f"Error fetching {url}: {e}", file=sys.stderr)
+                return ""
+
+
+def parse_search_results(search_html):
+    """Extrae ofertas del HTML de búsqueda de la Guest API usando regex.
+
+    El HTML de la Guest API tiene estructura conocida:
+    <li data-entity-urn="urn:li:jobPosting:123456"> ... </li>
+
+    Cada tarjeta contiene: título, empresa, ubicación, fecha.
+    """
+    jobs = []
+    seen_ids = set()  # dedup intra-página
+
+    # Cada <li> con data-entity-urn es una tarjeta de oferta
+    card_pattern = re.compile(
+        r'data-entity-urn="urn:li:jobPosting:(\d+)"(.*?)</li>',
+        re.DOTALL
+    )
+
+    for match in card_pattern.finditer(search_html):
+        job_id = match.group(1)        # ID numérico de la oferta
+        card_html = match.group(2)     # HTML interno de la tarjeta
+
+        if job_id in seen_ids:
+            continue
+        seen_ids.add(job_id)
+
+        # Título: dentro de h3 con clase base-search-card__title
+        title_match = re.search(
+            r'base-search-card__title[^>]*>\s*(.*?)\s*</h3>',
+            card_html, re.DOTALL
+        )
+        title = title_match.group(1).strip() if title_match else ""
+        title = re.sub(r'<[^>]+>', '', title).strip()
+
+        # Empresa: primero hidden-nested-link (más común),
+        # fallback: base-search-card__subtitle
+        company_match = re.search(
+            r'hidden-nested-link[^>]*>\s*(.*?)\s*</a>',
+            card_html, re.DOTALL
+        )
+        if not company_match:
+            company_match = re.search(
+                r'base-search-card__subtitle[^>]*>(.*?)</h4>',
+                card_html, re.DOTALL
+            )
+        company = company_match.group(1).strip() if company_match else ""
+        company = re.sub(r'<[^>]+>', '', company).strip()
+
+        # Ubicación: span con clase job-search-card__location
+        location_match = re.search(
+            r'job-search-card__location[^>]*>\s*(.*?)\s*</span>',
+            card_html, re.DOTALL
+        )
+        location = location_match.group(1).strip() if location_match else ""
+
+        # Fecha: etiqueta <time> con atributo datetime (ISO) y texto relativo
+        date_match = re.search(
+            r'<time[^>]*datetime="([^"]*)"[^>]*>(.*?)</time>',
+            card_html, re.DOTALL
+        )
+        date_label = re.sub(r'<[^>]+>', '', date_match.group(2)).strip() if date_match else ""
+
+        jobs.append({
+            "id": job_id,
+            "url": f"https://www.linkedin.com/jobs/view/{job_id}",
+            "title": title,
+            "company": company,
+            "location": location,
+            "date_label": date_label,
+        })
+
+    return jobs
+
+
+def search_jobs(params, max_pages=2, deadline=None):
+    """Busca ofertas vía Guest API con paginación.
+
+    Cada página devuelve hasta 25 ofertas. El parámetro 'start'
+    controla el offset (0, 25, 50, ...). Si una página no devuelve
+    resultados nuevos, la paginación se detiene.
+
+    Respeta el deadline global — si se acaba el tiempo, para.
+    300ms de sleep entre páginas para no saturar la API.
+    """
+    all_jobs = []
+    seen_ids = set()  # dedup entre páginas
+
+    for page in range(max_pages):
+        if deadline and time.time() > deadline:
+            print(f"Deadline alcanzado — parando búsqueda: {params.get('keywords','')}", file=sys.stderr)
+            break
+        start = page * 25
+        p = {**params, "start": start}
+        url = f"{BASE_SEARCH_URL}?{urlencode(p)}"
+        search_html = fetch_url(url)
+        if not search_html:
+            break
+
+        jobs = parse_search_results(search_html)
+        new_count = 0
+        for job in jobs:
+            if job["id"] not in seen_ids:
+                seen_ids.add(job["id"])
+                all_jobs.append(job)
+                new_count += 1
+
+        if new_count == 0:  # página sin resultados nuevos → fin
+            break
+        time.sleep(0.3)     # rate limiting: 300ms entre páginas
+
+    return all_jobs
+
+
+def get_job_details(job_id):
+    """Obtiene detalles de una oferta específica vía la API de detalle.
+
+    Hace fetch de la página individual de la oferta, limpia el HTML
+    y extrae:
+    - work_mode: Remote/Hybrid/On-site
+    - description: primeros 500 chars tras marcadores conocidos
+    - closed: True si ya no acepta solicitudes
+    """
+    url = BASE_JOB_URL.format(job_id)
+    detail_html = fetch_url(url)
+    if not detail_html:
+        return {}
+
+    # Limpiar HTML: reemplazar tags con espacios y colapsar whitespace
+    text = re.sub(r'<[^>]+>', ' ', detail_html)
+    text = re.sub(r'\s+', ' ', text).strip()
+
+    details = {}
+
+    # Extraer modo de trabajo
+    for pattern in [r'(Remote|Remoto|Hybrid|Híbrido|On-site|Presencial)']:
+        match = re.search(pattern, text, re.IGNORECASE)
+        if match:
+            details["work_mode"] = match.group(1)
+            break
+
+    # Extraer descripción — buscar marcadores y coger hasta 500 chars
+    for marker in ["Job description", "Descripción del puesto", "About the job", "Responsibilities"]:
+        idx = text.lower().find(marker.lower())
+        if idx > 0:
+            desc = text[idx:idx+800]
+            details["description"] = desc.strip()[:500]
+            break
+
+    # Comprobar si la oferta está cerrada
+    if "no longer accepting applications" in text.lower() or "ya no acepta" in text.lower():
+        details["closed"] = True
+
+    return details
+
+
+def build_searches(keywords):
+    """Construye queries de búsqueda a partir de la lista de keywords.
+
+    Cada keyword genera 2 queries:
+    1. Remoto en España (f_WT=2 para remoto)
+    2. Madrid sin filtro de modalidad (devuelve remoto+híbrido+presencial)
+    """
+    searches = []
+
+    # Remoto en España
+    for kw in keywords:
+        searches.append({
+            "keywords": kw,
+            "location": "Spain",
+            "f_WT": "2",           # Solo remoto
+            "f_TPR": "r86400",     # Últimas 24h
+            "sortBy": "DD",        # Más recientes primero
+        })
+
+    # Madrid (todas las modalidades)
+    for kw in keywords:
+        searches.append({
+            "keywords": kw,
+            "location": "Madrid, Spain",
+            "f_TPR": "r86400",
+            "sortBy": "DD",
+        })
+
+    return searches
+
+
+# ═══════════════════════════════════════════════════════════════
+# 1. BÚSQUEDA (Guest API)
+# ═══════════════════════════════════════════════════════════════
+
 def buscar_trabajos():
+    """Pipeline completo de búsqueda en la Guest API de LinkedIn."""
     ofertas_totales = []
+    searches = build_searches(KEYWORDS)
+    deadline = time.time() + 240  # 4 minutos de timeout global
+    all_seen_ids = set()  # dedup entre queries
 
-    # Adaptación para 'title_advanced':
-    # Las frases de varias palabras DEBEN ir entre comillas simples ('red team')
-    # Se unen con el operador lógico OR (|)
-    terminos_busqueda = [
-        "pentester",
-        "'red team'",
-        "'blue team'",
-        "'hacking ético'",
-        "ciberseguridad",
-        "cybersecurity",
-        "'penetration tester'",
-        "SOC",
-        "'SOC Analyst'",
-        "'Security Analyst'",
-        "'Threat Monitoring'",
-        # --- Administrador de Sistemas ---
-        "'administrador de sistemas'",
-        "sysadmin",
-        "'system administrator'",
-        # --- Inteligencia Artificial ---
-        "IA",
-        "AI",
-        "'inteligencia artificial'",
-        "'artificial intelligence'"
-    ]
-    title_filter = " | ".join(terminos_busqueda)
+    print(f"🔍 Buscando en LinkedIn Guest API — {len(KEYWORDS)} keywords × 2 queries = {len(searches)} búsquedas")
+    print(f"⏱️ Deadline: 4 minutos | Paginación: 2 páginas × 25 ofertas por query")
 
-    print(f"🔍 Búsqueda LinkedIn (Advanced): {title_filter}")
+    for params in searches:
+        if time.time() > deadline:
+            print("⏰ Deadline global alcanzado — parando búsquedas.", file=sys.stderr)
+            break
 
-    conn = http.client.HTTPSConnection("linkedin-job-search-api.p.rapidapi.com")
+        jobs = search_jobs(params, max_pages=2, deadline=deadline)
+        kw = params.get("keywords", "")
 
-    headers = {
-        "x-rapidapi-key": RAPIDAPI_KEY,
-        "x-rapidapi-host": "linkedin-job-search-api.p.rapidapi.com",
-        "Content-Type": "application/json"
-    }
+        for job in jobs:
+            if job["id"] not in all_seen_ids:
+                all_seen_ids.add(job["id"])
 
-    # Codificamos los parámetros para la URL
-    title_encoded = urllib.parse.quote(title_filter)
-    location_encoded = urllib.parse.quote("Spain")
-    
-    # Construcción del nuevo endpoint basado en la documentación:
-    # - Endpoint principal asumido: /active-jb
-    # - time_frame=24h (reemplaza a active-jb-24h)
-    # - title_advanced (reemplaza a title_filter, soporta operadores lógicos)
-    # - location (reemplaza a location_filter)
-    endpoint = f"/active-jb?time_frame=24h&title_advanced={title_encoded}&location={location_encoded}"
+                # Obtener detalles (descripción, modo trabajo)
+                details = get_job_details(job["id"])
 
-    try:
-        conn.request("GET", endpoint, headers=headers)
-        res = conn.getresponse()
-        raw_data = res.read()
+                # Saltar ofertas cerradas
+                if details.get("closed"):
+                    print(f"⏭️ Oferta cerrada: {job['title']}", file=sys.stderr)
+                    continue
 
-        if res.status == 200:
-            data = json.loads(raw_data.decode("utf-8"))
-
-            # La API puede devolver una lista directa o un objeto con clave 'data' o 'results'
-            jobs = data if isinstance(data, list) else data.get("data", data.get("results", []))
-
-            print(f"📦 LinkedIn: {len(jobs)} ofertas encontradas.")
-
-            for j in jobs:
-                job_id = j.get("id", "")
-                
-                # Ubicación: usamos locations_derived si existe, sino addressLocality
-                ubicacion = ""
-                locations_derived = j.get("locations_derived", [])
-                if locations_derived:
-                    ubicacion = ", ".join(locations_derived)
-                elif j.get("locations_raw"):
-                    for loc in j.get("locations_raw", []):
-                        addr = loc.get("address", {})
-                        ubicacion = addr.get("addressLocality", addr.get("addressCountry", ""))
-
-                # Algunas APIs nuevas cambian 'remote_derived' por 'ai_work_arrangement'. 
-                # Mantenemos un fallback por si acaso.
-                es_remoto = j.get("remote_derived", False)
-                if not es_remoto and "Remote" in str(j.get("ai_work_arrangement", "")):
-                    es_remoto = True
+                # Determinar si es remoto
+                work_mode = details.get("work_mode", "")
+                es_remoto = work_mode.lower() in ("remote", "remoto")
 
                 ofertas_totales.append({
-                    "id": str(job_id) if job_id else "",
-                    "titulo": j.get("title", ""),
-                    "empresa": j.get("organization", "Empresa oculta"),
-                    "ubicacion": ubicacion,
-                    "descripcion": j.get("description_text", j.get("description", "")),
-                    "enlace": j.get("url", ""),
+                    "id": str(job["id"]),
+                    "titulo": job.get("title", ""),
+                    "empresa": job.get("company", "Empresa oculta"),
+                    "ubicacion": job.get("location", ""),
+                    "descripcion": details.get("description", ""),
+                    "enlace": job.get("url", ""),
                     "plataforma": "LinkedIn",
-                    "es_remoto": es_remoto
+                    "es_remoto": es_remoto,
+                    "work_mode": work_mode,
                 })
-        else:
-            print(f"❌ Error API LinkedIn: {res.status} - {raw_data.decode('utf-8')}")
-    except Exception as e:
-        print(f"❌ Error en petición LinkedIn: {e}")
-    finally:
-        conn.close()
 
+        time.sleep(0.3)  # delay entre keywords
+
+    print(f"📦 LinkedIn Guest API: {len(ofertas_totales)} ofertas encontradas en total.")
     return ofertas_totales
 
 
-# --- 2. FILTRADO ---
+# ═══════════════════════════════════════════════════════════════
+# 2. FILTRADO
+# ═══════════════════════════════════════════════════════════════
+
 def filtrar_ofertas(ofertas):
+    """Filtra ofertas por senioridad, zona y modalidad.
+
+    - Excluye senior/lead/manager/director/architect. Incluye junior.
+    - Zona: Madrid y alrededores si es presencial o híbrido.
+    - Cualquier lugar de España si es teletrabajo (remoto).
+    """
     ofertas_validas = []
-    palabras_prohibidas = ["senior", "sr", "lead", "principal", "manager", "director", "architect"]
 
     for oferta in ofertas:
         titulo_low = oferta["titulo"].lower()
-        es_senior = any(word in titulo_low.split() for word in palabras_prohibidas)
+        ubicacion_low = oferta["ubicacion"].lower()
+        descripcion_low = oferta.get("descripcion", "").lower()
 
-        if not es_senior and oferta["enlace"]:
-            oferta["modalidad"] = "🏠 Remoto" if oferta["es_remoto"] else "🏢 Presencial / Híbrido"
-            ofertas_validas.append(oferta)
+        # Excluir por senioridad (excluimos senior, lead, manager, etc. pero dejamos junior)
+        es_senior = any(word in titulo_low.split() for word in PALABRAS_PROHIBIDAS)
+        if es_senior:
+            continue
+
+        # Determinar si es remoto (teletrabajo)
+        es_remoto = oferta.get("es_remoto", False)
+        work_mode = oferta.get("work_mode", "").lower()
+        
+        if work_mode in ("remote", "remoto"):
+            es_remoto = True
+        if any(kw in descripcion_low or kw in ubicacion_low for kw in KEYWORDS_FLEXIBILIDAD):
+            es_remoto = True
+
+        es_hibrido = work_mode in ("hybrid", "híbrido") or "híbrido" in descripcion_low or "hybrid" in descripcion_low
+        
+        # Filtros de ubicación:
+        # - Si es remoto: Cualquier lugar de España (asumimos que todo lo que devuelve es de España por las queries)
+        # - Si es presencial o híbrido: Solo zonas de Madrid
+        en_madrid = any(ciudad in ubicacion_low for ciudad in ZONAS_MADRID)
+
+        if es_remoto:
+            oferta["modalidad"] = "🏠 Remoto / Teletrabajo"
+            if oferta["enlace"]:
+                ofertas_validas.append(oferta)
+        elif en_madrid:
+            if es_hibrido:
+                oferta["modalidad"] = "🏠🏢 Híbrido"
+            else:
+                oferta["modalidad"] = "🏢 Presencial"
+            if oferta["enlace"]:
+                ofertas_validas.append(oferta)
 
     return ofertas_validas
 
 
-# --- 3. ENVÍO A TELEGRAM ---
+# ═══════════════════════════════════════════════════════════════
+# 3. ENVÍO A TELEGRAM
+# ═══════════════════════════════════════════════════════════════
+
 def enviar_oferta_telegram(oferta):
-    import requests  # Importado localmente como lo tenías
+    import requests  # Importado localmente
 
     url = f"https://api.telegram.org/bot{TELEGRAM_TOKEN}/sendMessage"
 
@@ -189,30 +477,32 @@ def enviar_oferta_telegram(oferta):
 
     try:
         r = requests.post(url, json=payload)
-        
+
         # Manejo de Rate Limit de Telegram (429)
         if r.status_code == 429:
-            import time
             try:
                 error_data = r.json()
                 retry_after = error_data.get("parameters", {}).get("retry_after", 30)
-            except:
+            except Exception:
                 retry_after = 30
             print(f"⚠️ Rate Limit de Telegram. Esperando {retry_after} segundos...")
             time.sleep(retry_after)
-            r = requests.post(url, json=payload) # Reintento
-            
+            r = requests.post(url, json=payload)  # Reintento
+
         if r.status_code != 200:
             print(f"❌ Error Telegram ({r.status_code}): {r.text}")
             return False
-            
+
         return True
     except Exception as e:
         print(f"❌ Error enviando a Telegram: {e}")
         return False
 
 
-# --- EJECUCIÓN ---
+# ═══════════════════════════════════════════════════════════════
+# EJECUCIÓN
+# ═══════════════════════════════════════════════════════════════
+
 if __name__ == "__main__":
     ofertas_crudas = buscar_trabajos()
     filtradas = filtrar_ofertas(ofertas_crudas)
