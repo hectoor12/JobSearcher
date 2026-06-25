@@ -228,23 +228,17 @@ def parse_search_results(search_html):
     return jobs
 
 
-def search_jobs(params, max_pages=2, deadline=None):
+def search_jobs(params, max_pages=2):
     """Busca ofertas vía Guest API con paginación.
 
     Cada página devuelve hasta 25 ofertas. El parámetro 'start'
     controla el offset (0, 25, 50, ...). Si una página no devuelve
     resultados nuevos, la paginación se detiene.
-
-    Respeta el deadline global — si se acaba el tiempo, para.
-    300ms de sleep entre páginas para no saturar la API.
     """
     all_jobs = []
     seen_ids = set()  # dedup entre páginas
 
     for page in range(max_pages):
-        if deadline and time.time() > deadline:
-            print(f"Deadline alcanzado — parando búsqueda: {params.get('keywords','')}", file=sys.stderr)
-            break
         start = page * 25
         p = {**params, "start": start}
         url = f"{BASE_SEARCH_URL}?{urlencode(p)}"
@@ -262,7 +256,7 @@ def search_jobs(params, max_pages=2, deadline=None):
 
         if new_count == 0:  # página sin resultados nuevos → fin
             break
-        time.sleep(1.5)     # rate limiting: 1.5s entre páginas
+        time.sleep(3)     # rate limiting: 3s entre páginas para evitar 429
 
     return all_jobs
 
@@ -348,18 +342,13 @@ def buscar_trabajos():
     """Pipeline completo de búsqueda en la Guest API de LinkedIn."""
     ofertas_totales = []
     searches = build_searches(KEYWORDS)
-    deadline = time.time() + 240  # 4 minutos de timeout global
     all_seen_ids = set()  # dedup entre queries
 
     print(f"🔍 Buscando en LinkedIn Guest API — {len(KEYWORDS)} keywords × 2 queries = {len(searches)} búsquedas")
-    print(f"⏱️ Deadline: 4 minutos | Paginación: 2 páginas × 25 ofertas por query")
+    print(f"⏱️ Bucle continuo: Paginación: 2 páginas × 25 ofertas por query")
 
     for params in searches:
-        if time.time() > deadline:
-            print("⏰ Deadline global alcanzado — parando búsquedas.", file=sys.stderr)
-            break
-
-        jobs = search_jobs(params, max_pages=2, deadline=deadline)
+        jobs = search_jobs(params, max_pages=2)
         kw = params.get("keywords", "")
 
         for job in jobs:
@@ -368,7 +357,7 @@ def buscar_trabajos():
 
                 # Obtener detalles (descripción, modo trabajo)
                 details = get_job_details(job["id"])
-                time.sleep(0.5)  # rate limiting: 500ms entre llamadas de detalle
+                time.sleep(2)  # rate limiting: 2s entre llamadas de detalle
 
                 # Saltar ofertas cerradas
                 if details.get("closed"):
@@ -391,9 +380,9 @@ def buscar_trabajos():
                     "work_mode": work_mode,
                 })
 
-        time.sleep(2.0)  # delay entre keywords
+        time.sleep(5)  # delay de 5s entre keywords para proteger la IP
 
-    print(f"📦 LinkedIn Guest API: {len(ofertas_totales)} ofertas encontradas en total.")
+    print(f"📦 LinkedIn Guest API: {len(ofertas_totales)} ofertas encontradas en total en este ciclo.")
     return ofertas_totales
 
 
@@ -510,31 +499,44 @@ def enviar_oferta_telegram(oferta):
 # EJECUCIÓN
 # ═══════════════════════════════════════════════════════════════
 
+def main_loop():
+    while True:
+        try:
+            print(f"[{time.strftime('%Y-%m-%d %H:%M:%S')}] Iniciando ciclo de búsqueda...")
+            ofertas_crudas = buscar_trabajos()
+            filtradas = filtrar_ofertas(ofertas_crudas)
+
+            print(f"🎯 Total tras filtros: {len(filtradas)}")
+
+            nuevas = 0
+            duplicadas = 0
+            sin_id = 0
+
+            for job in filtradas:
+                job_id = job["id"]
+                if job_id and not trabajo_ya_existe(job_id):
+                    exito = enviar_oferta_telegram(job)
+                    if exito:
+                        guardar_trabajo(job_id, job)
+                        print(f"📩 Enviada: {job['titulo']} en {job['empresa']}")
+                        nuevas += 1
+                    else:
+                        print(f"⚠️ Fallo al enviar a Telegram, no se guardó en BD: {job['titulo']}")
+                elif job_id:
+                    print(f"⏭️ Ya existe en BD: {job['titulo']} en {job['empresa']}")
+                    duplicadas += 1
+                else:
+                    print(f"⚠️ Oferta sin ID, omitida: {job['titulo']}")
+                    sin_id += 1
+
+            print(f"\n📊 Resumen del ciclo: {nuevas} nuevas enviadas | {duplicadas} ya en BD | {sin_id} sin ID")
+        except Exception as e:
+            print(f"❌ Error en el ciclo principal: {e}", file=sys.stderr)
+        
+        # Esperar 5 minutos antes del próximo escaneo
+        print("💤 Esperando 5 minutos para el próximo ciclo...\n")
+        time.sleep(300)
+
+
 if __name__ == "__main__":
-    ofertas_crudas = buscar_trabajos()
-    filtradas = filtrar_ofertas(ofertas_crudas)
-
-    print(f"🎯 Total tras filtros: {len(filtradas)}")
-
-    nuevas = 0
-    duplicadas = 0
-    sin_id = 0
-
-    for job in filtradas:
-        job_id = job["id"]
-        if job_id and not trabajo_ya_existe(job_id):
-            exito = enviar_oferta_telegram(job)
-            if exito:
-                guardar_trabajo(job_id, job)
-                print(f"📩 Enviada: {job['titulo']} en {job['empresa']}")
-                nuevas += 1
-            else:
-                print(f"⚠️ Fallo al enviar a Telegram, no se guardó en BD: {job['titulo']}")
-        elif job_id:
-            print(f"⏭️ Ya existe en BD: {job['titulo']} en {job['empresa']}")
-            duplicadas += 1
-        else:
-            print(f"⚠️ Oferta sin ID, omitida: {job['titulo']}")
-            sin_id += 1
-
-    print(f"\n📊 Resumen: {nuevas} nuevas enviadas | {duplicadas} ya en BD | {sin_id} sin ID")
+    main_loop()
