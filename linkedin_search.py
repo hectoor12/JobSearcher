@@ -74,19 +74,28 @@ KEYWORDS = [
     "'Threat Monitoring'",
     # --- Administrador de Sistemas ---
     "'administrador de sistemas'",
+    "'administración de sistemas'",
     "sysadmin",
     "'system administrator'",
+    "systems engineer",
+    "sistemas linux",
     # --- Inteligencia Artificial ---
     "IA",
     "AI",
     "'inteligencia artificial'",
-    "'artificial intelligence'"
+    "'artificial intelligence'",
+    "machine learning",
+    "mlops",
+    "genai"
 ]
 
 # --- ZONAS MADRID (para presencial o híbrido) ---
 ZONAS_MADRID = [
     "madrid", "alcobendas", "pozuelo", "las rozas", 
     "getafe", "leganés", "móstoles", "fuenlabrada",
+    "boadilla", "majadahonda", "tres cantos", "alcorcón",
+    "san sebastián de los reyes", "ss de los reyes", "parla",
+    "valdemoro", "pinto", "alcalá", "torrejón"
 ]
 
 # --- PALABRAS PROHIBIDAS EN TÍTULO (filtro senioridad) ---
@@ -442,10 +451,10 @@ def filtrar_ofertas(ofertas):
         
         if work_mode in ("remote", "remoto"):
             es_remoto = True
-        if any(kw in descripcion_low or kw in ubicacion_low for kw in KEYWORDS_FLEXIBILIDAD):
+        if any(kw in titulo_low or kw in descripcion_low or kw in ubicacion_low for kw in KEYWORDS_FLEXIBILIDAD):
             es_remoto = True
 
-        es_hibrido = work_mode in ("hybrid", "híbrido") or "híbrido" in descripcion_low or "hybrid" in descripcion_low
+        es_hibrido = work_mode in ("hybrid", "híbrido") or "híbrido" in titulo_low or "hybrid" in titulo_low or "híbrido" in descripcion_low or "hybrid" in descripcion_low
         
         # Filtros de ubicación:
         # - Si es remoto: Cualquier lugar de España (asumimos que todo lo que devuelve es de España por las queries)
