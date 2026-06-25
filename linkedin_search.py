@@ -66,6 +66,7 @@ KEYWORDS = [
     "cybersecurity",
     "'cyber security'",
     "'seguridad informática'",
+    "devsecops",
     "'penetration tester'",
     "SOC",
     "'SOC Analyst'",
