@@ -338,7 +338,7 @@ def build_searches(keywords):
 # 1. BÚSQUEDA (Guest API)
 # ═══════════════════════════════════════════════════════════════
 
-def buscar_trabajos():
+def buscar_trabajos(on_job_found=None):
     """Pipeline completo de búsqueda en la Guest API de LinkedIn."""
     ofertas_totales = []
     searches = build_searches(KEYWORDS)
@@ -368,7 +368,7 @@ def buscar_trabajos():
                 work_mode = details.get("work_mode", "")
                 es_remoto = work_mode.lower() in ("remote", "remoto")
 
-                ofertas_totales.append({
+                oferta = {
                     "id": str(job["id"]),
                     "titulo": job.get("title", ""),
                     "empresa": job.get("company", "Empresa oculta"),
@@ -378,7 +378,11 @@ def buscar_trabajos():
                     "plataforma": "LinkedIn",
                     "es_remoto": es_remoto,
                     "work_mode": work_mode,
-                })
+                }
+                ofertas_totales.append(oferta)
+                
+                if on_job_found:
+                    on_job_found(oferta)
 
         time.sleep(5)  # delay de 5s entre keywords para proteger la IP
 
@@ -503,33 +507,32 @@ def main_loop():
     while True:
         try:
             print(f"[{time.strftime('%Y-%m-%d %H:%M:%S')}] Iniciando ciclo de búsqueda...")
-            ofertas_crudas = buscar_trabajos()
-            filtradas = filtrar_ofertas(ofertas_crudas)
+            estadisticas = {"nuevas": 0, "duplicadas": 0, "filtradas_out": 0}
 
-            print(f"🎯 Total tras filtros: {len(filtradas)}")
-
-            nuevas = 0
-            duplicadas = 0
-            sin_id = 0
-
-            for job in filtradas:
+            def procesar_oferta(job):
+                # 1. Aplicar los filtros a esta oferta individual
+                filtradas = filtrar_ofertas([job])
+                if not filtradas:
+                    estadisticas["filtradas_out"] += 1
+                    return
+                
+                # 2. Si pasa los filtros, comprobar BD y enviar a Telegram
                 job_id = job["id"]
                 if job_id and not trabajo_ya_existe(job_id):
                     exito = enviar_oferta_telegram(job)
                     if exito:
                         guardar_trabajo(job_id, job)
-                        print(f"📩 Enviada: {job['titulo']} en {job['empresa']}")
-                        nuevas += 1
+                        print(f"📩 ENVIADA AL INSTANTE: {job['titulo']} en {job['empresa']}")
+                        estadisticas["nuevas"] += 1
                     else:
-                        print(f"⚠️ Fallo al enviar a Telegram, no se guardó en BD: {job['titulo']}")
+                        print(f"⚠️ Fallo al enviar a Telegram: {job['titulo']}")
                 elif job_id:
-                    print(f"⏭️ Ya existe en BD: {job['titulo']} en {job['empresa']}")
-                    duplicadas += 1
-                else:
-                    print(f"⚠️ Oferta sin ID, omitida: {job['titulo']}")
-                    sin_id += 1
+                    estadisticas["duplicadas"] += 1
 
-            print(f"\n📊 Resumen del ciclo: {nuevas} nuevas enviadas | {duplicadas} ya en BD | {sin_id} sin ID")
+            # Llamamos a buscar_trabajos y le pasamos la función para que las envíe sobre la marcha
+            buscar_trabajos(on_job_found=procesar_oferta)
+
+            print(f"\n📊 Resumen del ciclo: {estadisticas['nuevas']} nuevas enviadas | {estadisticas['duplicadas']} ya en BD | {estadisticas['filtradas_out']} descartadas por filtros")
         except Exception as e:
             print(f"❌ Error en el ciclo principal: {e}", file=sys.stderr)
         
