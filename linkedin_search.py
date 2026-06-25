@@ -104,7 +104,8 @@ ZONAS_MADRID = [
 PALABRAS_PROHIBIDAS = [
     "senior", "sr", "lead", "principal", "manager",
     "director", "architect", "arquitecto", "expert",
-    "head", "chief", "cpo", "cto", "ceo", "cfo", "vp", "vice", "president"
+    "head", "chief", "cpo", "cto", "ceo", "cfo", "vp", "vice", "president",
+    "redes", "routing", "switching"
 ]
 
 # --- KEYWORDS DE REMOTO ---
