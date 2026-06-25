@@ -1,2 +1,16 @@
-# Claves sin cifrar (NUNCA subir al repo)
+# Archivos de entorno (Variables secretas)
+.env
+.env.*
+
+# Claves sin cifrar y credenciales
+*.json
 api_keys_input.json
+jobsearcher-c39e3-firebase-adminsdk-fbsvc-dec58f2404.json
+
+# Logs del bot
+*.log
+scraper.log
+
+# Caché de Python
+__pycache__/
+*.py[cod]
