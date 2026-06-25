@@ -417,7 +417,14 @@ def filtrar_ofertas(ofertas):
         # Validar que realmente contenga alguna de las palabras clave de búsqueda
         # (quitamos las comillas simples que usamos para la API de LinkedIn)
         keywords_limpias = [kw.replace("'", "").lower() for kw in KEYWORDS]
-        tiene_keyword = any(kw in titulo_low or kw in descripcion_low for kw in keywords_limpias)
+        tiene_keyword = False
+        for kw in keywords_limpias:
+            # Usamos \b para que coincida con la palabra completa y no como parte de otra (ej: "ia" dentro de "oficial")
+            patron = r'\b' + re.escape(kw) + r'\b'
+            if re.search(patron, titulo_low) or re.search(patron, descripcion_low):
+                tiene_keyword = True
+                break
+                
         if not tiene_keyword:
             continue
 
