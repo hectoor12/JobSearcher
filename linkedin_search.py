@@ -105,7 +105,7 @@ PALABRAS_PROHIBIDAS = [
     "senior", "sr", "lead", "principal", "manager",
     "director", "architect", "arquitecto", "expert",
     "head", "chief", "cpo", "cto", "ceo", "cfo", "vp", "vice", "president",
-    "redes", "routing", "switching"
+    "redes", "routing", "switching", "staff"
 ]
 
 # --- KEYWORDS DE REMOTO ---
