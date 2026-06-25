@@ -105,10 +105,14 @@ PALABRAS_PROHIBIDAS = [
     "head", "chief", "cpo", "cto", "ceo", "cfo", "vp", "vice", "president"
 ]
 
-# --- KEYWORDS DE FLEXIBILIDAD ---
-KEYWORDS_FLEXIBILIDAD = [
-    "remoto", "remote", "híbrido", "hibrido",
-    "hybrid", "teletrabajo",
+# --- KEYWORDS DE REMOTO ---
+KEYWORDS_REMOTO = [
+    "remoto", "remote", "teletrabajo",
+]
+
+# --- KEYWORDS DE HÍBRIDO ---
+KEYWORDS_HIBRIDO = [
+    "híbrido", "hibrido", "hybrid",
 ]
 
 # --- HTTP HEADERS ---
@@ -451,10 +455,10 @@ def filtrar_ofertas(ofertas):
         
         if work_mode in ("remote", "remoto"):
             es_remoto = True
-        if any(kw in titulo_low or kw in descripcion_low or kw in ubicacion_low for kw in KEYWORDS_FLEXIBILIDAD):
+        if any(kw in titulo_low or kw in descripcion_low or kw in ubicacion_low for kw in KEYWORDS_REMOTO):
             es_remoto = True
 
-        es_hibrido = work_mode in ("hybrid", "híbrido") or "híbrido" in titulo_low or "hybrid" in titulo_low or "híbrido" in descripcion_low or "hybrid" in descripcion_low
+        es_hibrido = work_mode in ("hybrid", "híbrido") or any(kw in titulo_low or kw in descripcion_low for kw in KEYWORDS_HIBRIDO)
         
         # Filtros de ubicación:
         # - Si es remoto: Cualquier lugar de España (asumimos que todo lo que devuelve es de España por las queries)
