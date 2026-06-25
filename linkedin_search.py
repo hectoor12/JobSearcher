@@ -90,6 +90,7 @@ ZONAS_MADRID = [
 PALABRAS_PROHIBIDAS = [
     "senior", "sr", "lead", "principal", "manager",
     "director", "architect", "arquitecto", "expert",
+    "head", "chief", "cpo", "cto", "ceo", "cfo", "vp", "vice", "president"
 ]
 
 # --- KEYWORDS DE FLEXIBILIDAD ---
@@ -408,9 +409,16 @@ def filtrar_ofertas(ofertas):
         ubicacion_low = oferta["ubicacion"].lower()
         descripcion_low = oferta.get("descripcion", "").lower()
 
-        # Excluir por senioridad (excluimos senior, lead, manager, etc. pero dejamos junior)
+        # Excluir por senioridad (excluimos senior, lead, manager, head, etc.)
         es_senior = any(word in titulo_low.split() for word in PALABRAS_PROHIBIDAS)
         if es_senior:
+            continue
+
+        # Validar que realmente contenga alguna de las palabras clave de búsqueda
+        # (quitamos las comillas simples que usamos para la API de LinkedIn)
+        keywords_limpias = [kw.replace("'", "").lower() for kw in KEYWORDS]
+        tiene_keyword = any(kw in titulo_low or kw in descripcion_low for kw in keywords_limpias)
+        if not tiene_keyword:
             continue
 
         # Determinar si es remoto (teletrabajo)
