@@ -412,6 +412,7 @@ def filtrar_ofertas(ofertas):
         # Excluir por senioridad (excluimos senior, lead, manager, head, etc.)
         es_senior = any(word in titulo_low.split() for word in PALABRAS_PROHIBIDAS)
         if es_senior:
+            print(f"❌ Rechazada (Senioridad): {oferta['titulo']}")
             continue
 
         # Validar que realmente contenga alguna de las palabras clave de búsqueda
@@ -426,6 +427,7 @@ def filtrar_ofertas(ofertas):
                 break
                 
         if not tiene_keyword:
+            print(f"❌ Rechazada (Sin keyword exacta): {oferta['titulo']}")
             continue
 
         # Determinar si es remoto (teletrabajo)
@@ -448,6 +450,8 @@ def filtrar_ofertas(ofertas):
             oferta["modalidad"] = "🏠 Remoto / Teletrabajo"
             if oferta["enlace"]:
                 ofertas_validas.append(oferta)
+            else:
+                print(f"❌ Rechazada (Sin enlace): {oferta['titulo']}")
         elif en_madrid:
             if es_hibrido:
                 oferta["modalidad"] = "🏠🏢 Híbrido"
@@ -455,6 +459,10 @@ def filtrar_ofertas(ofertas):
                 oferta["modalidad"] = "🏢 Presencial"
             if oferta["enlace"]:
                 ofertas_validas.append(oferta)
+            else:
+                print(f"❌ Rechazada (Sin enlace): {oferta['titulo']}")
+        else:
+            print(f"❌ Rechazada (Ubicación/Modalidad): {oferta['titulo']} - {oferta.get('ubicacion', '')} ({work_mode})")
 
     return ofertas_validas
 
