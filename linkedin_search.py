@@ -194,11 +194,11 @@ def fetch_url(url, retries=4):
             if attempt < retries:
                 # LinkedIn necesita esperas largas en 429 (45s, 90s, 135s, 180s)
                 if hasattr(e, 'code') and e.code == 429:
-                    espera = 45 + (attempt * 45)
+                    espera = 15 + (attempt * 15)
                     print(f"⚠️ 429 Too Many Requests. Esperando {espera}s antes de reintentar...", file=sys.stderr)
                     time.sleep(espera)
                 else:
-                    time.sleep(5)
+                    time.sleep(2)
             else:
                 print(f"Error fetching {url}: {e}", file=sys.stderr)
                 return ""
@@ -305,7 +305,7 @@ def search_jobs(params, max_pages=2):
 
         if new_count == 0:  # página sin resultados nuevos → fin
             break
-        time.sleep(8)     # rate limiting: 8s entre páginas para evitar 429
+        time.sleep(3)     # rate limiting: 3s entre páginas (1 solo proceso)
 
     return all_jobs
 
@@ -406,7 +406,7 @@ def buscar_trabajos(on_job_found=None):
 
                 # Obtener detalles (descripción, modo trabajo)
                 details = get_job_details(job["id"])
-                time.sleep(6)  # rate limiting: 6s entre llamadas de detalle
+                time.sleep(2)  # rate limiting: 2s entre llamadas de detalle (1 solo proceso)
 
                 # Saltar ofertas cerradas
                 if details.get("closed"):
@@ -433,7 +433,7 @@ def buscar_trabajos(on_job_found=None):
                 if on_job_found:
                     on_job_found(oferta)
 
-        time.sleep(15)  # delay de 15s entre keywords para proteger la IP
+        time.sleep(5)  # delay de 5s entre keywords (1 solo proceso)
 
     print(f"📦 LinkedIn Guest API: {len(ofertas_totales)} ofertas encontradas en total en este ciclo.")
     return ofertas_totales
