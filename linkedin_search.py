@@ -24,18 +24,39 @@ CHAT_ID = os.environ.get("TELEGRAM_CHAT_ID")
 FIREBASE_JSON_STR = os.environ.get("FIREBASE_CREDENTIALS")
 
 # --- INICIALIZACIÓN FIREBASE ---
+# Intentamos primero con variable de entorno, luego con archivo local
+_FIREBASE_JSON_FILE = os.path.join(os.path.dirname(os.path.abspath(__file__)), "jobsearcher-c39e3-firebase-adminsdk-fbsvc-dec58f2404.json")
+
+cred = None
+
+# 1º Intentar desde variable de entorno
 if FIREBASE_JSON_STR:
     try:
         cred_dict = json.loads(FIREBASE_JSON_STR)
         cred = credentials.Certificate(cred_dict)
-        if not firebase_admin._apps:
-            firebase_admin.initialize_app(cred)
-        db = firestore.client()
+        print("✅ Firebase: credenciales cargadas desde variable de entorno")
     except Exception as e:
-        print(f"❌ Error al inicializar Firebase: {e}")
+        print(f"⚠️ Firebase: error al parsear FIREBASE_CREDENTIALS ({e}), intentando archivo local...")
+
+# 2º Fallback al archivo JSON local
+if cred is None:
+    if os.path.exists(_FIREBASE_JSON_FILE):
+        try:
+            cred = credentials.Certificate(_FIREBASE_JSON_FILE)
+            print(f"✅ Firebase: credenciales cargadas desde archivo local")
+        except Exception as e:
+            print(f"❌ Error al cargar archivo JSON local de Firebase: {e}")
+            exit()
+    else:
+        print("❌ Error: No se encontró FIREBASE_CREDENTIALS ni el archivo JSON local")
         exit()
-else:
-    print("❌ Error: No se encontró FIREBASE_CREDENTIALS")
+
+try:
+    if not firebase_admin._apps:
+        firebase_admin.initialize_app(cred)
+    db = firestore.client()
+except Exception as e:
+    print(f"❌ Error al inicializar Firebase: {e}")
     exit()
 
 
@@ -58,37 +79,35 @@ BASE_JOB_URL = "https://www.linkedin.com/jobs-guest/jobs/api/jobPosting/{}"
 # Tus términos de búsqueda actuales, adaptados al formato Guest API.
 # Cada keyword genera 2 queries: Remoto España + Madrid (sin filtro de modalidad)
 KEYWORDS = [
-    "pentester",
-    "'red team'",
-    "'blue team'",
-    "'hacking ético'",
-    "ciberseguridad",
-    "cybersecurity",
-    "'cyber security'",
-    "'seguridad informática'",
-    "devsecops",
-    "'penetration tester'",
-    "SOC",
-    "'SOC Analyst'",
-    "'Security Analyst'",
-    "'Threat Monitoring'",
-    "'Threat Intelligence'",
-    "'Cyber Threat Intelligence'",
-    # --- Administrador de Sistemas ---
-    "'administrador de sistemas'",
-    "'administración de sistemas'",
-    "sysadmin",
-    "'system administrator'",
-    "systems engineer",
-    "sistemas linux",
-    # --- Inteligencia Artificial ---
-    "IA",
-    "AI",
-    "'inteligencia artificial'",
-    "'artificial intelligence'",
-    "machine learning",
-    "mlops",
-    "genai"
+    # --- Periodismo y Redacción ---
+    "periodista",
+    "redactor",
+    "'periodismo digital'",
+    "'periodismo de investigación'",
+    "reportero",
+    "corresponsal",
+    "'editor de contenidos'",
+    "'redactor de contenidos'",
+    "'comunicación audiovisual'",
+    "'medios de comunicación'",
+    # --- Comunicación y PR ---
+    "'relaciones públicas'",
+    "'comunicación corporativa'",
+    "'gabinete de comunicación'",
+    "'community manager'",
+    "'social media manager'",
+    "'gestor de redes sociales'",
+    "'content manager'",
+    "'copywriter'",
+    "'estrategia de contenidos'",
+    # --- Producción Audiovisual ---
+    "locutor",
+    "presentador",
+    "guionista",
+    "'productor audiovisual'",
+    "'productor de contenidos'",
+    "'editor de vídeo'",
+    "'periodismo multimedia'",
 ]
 
 # --- ZONAS MADRID (para presencial o híbrido) ---
@@ -103,9 +122,8 @@ ZONAS_MADRID = [
 # --- PALABRAS PROHIBIDAS EN TÍTULO (filtro senioridad) ---
 PALABRAS_PROHIBIDAS = [
     "senior", "sr", "lead", "principal", "manager",
-    "director", "architect", "arquitecto", "expert",
-    "head", "chief", "cpo", "cto", "ceo", "cfo", "vp", "vice", "president",
-    "redes", "routing", "switching", "staff"
+    "director", "head", "chief", "jefe", "responsable de comunicación",
+    "cto", "ceo", "cfo", "vp", "vice", "president"
 ]
 
 # --- KEYWORDS DE REMOTO ---
@@ -119,11 +137,16 @@ KEYWORDS_HIBRIDO = [
 ]
 
 # --- HTTP HEADERS ---
-# User-Agent de Chrome para evitar ser bloqueado como bot
+# Lista de User-Agents para rotar y evitar bloqueos
+USER_AGENTS = [
+    "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/126.0.0.0 Safari/537.36",
+    "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/125.0.0.0 Safari/537.36",
+    "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36",
+    "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/17.4 Safari/605.1.15",
+]
+
 HEADERS = {
-    "User-Agent": "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) "
-                  "AppleWebKit/537.36 (KHTML, like Gecko) "
-                  "Chrome/126.0.0.0 Safari/537.36",
+    "User-Agent": USER_AGENTS[0],
     "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8",
     "Accept-Language": "es-ES,es;q=0.9,en;q=0.5",
 }
@@ -150,26 +173,32 @@ def guardar_trabajo(job_id, oferta):
 # SCRAPER — GUEST API DE LINKEDIN
 # ═══════════════════════════════════════════════════════════════
 
-def fetch_url(url, retries=3):
+import random
+
+def fetch_url(url, retries=4):
     """HTTP request con retry y rate limiting.
 
     Usa urllib.request (stdlib) — no necesita requests ni http.client.
-    Timeout de 8s por petición. Retry con backoff para evitar 429.
+    Timeout de 10s por petición. Retry con backoff largo para evitar 429 de LinkedIn.
     """
     for attempt in range(retries + 1):
+        # Rotar User-Agent en cada intento
+        headers = dict(HEADERS)
+        headers["User-Agent"] = random.choice(USER_AGENTS)
+
         try:
-            req = Request(url, headers=HEADERS)
-            with urlopen(req, timeout=8) as resp:
+            req = Request(url, headers=headers)
+            with urlopen(req, timeout=10) as resp:
                 return resp.read().decode("utf-8", errors="replace")
         except Exception as e:
             if attempt < retries:
-                # Si nos bloquean por muchas peticiones (429), esperamos más
+                # LinkedIn necesita esperas largas en 429 (45s, 90s, 135s, 180s)
                 if hasattr(e, 'code') and e.code == 429:
-                    espera = 5 + (attempt * 5)
-                    print(f"⚠️ 429 Too Many Requests. Esperando {espera}s...", file=sys.stderr)
+                    espera = 45 + (attempt * 45)
+                    print(f"⚠️ 429 Too Many Requests. Esperando {espera}s antes de reintentar...", file=sys.stderr)
                     time.sleep(espera)
                 else:
-                    time.sleep(2)
+                    time.sleep(5)
             else:
                 print(f"Error fetching {url}: {e}", file=sys.stderr)
                 return ""
@@ -276,7 +305,7 @@ def search_jobs(params, max_pages=2):
 
         if new_count == 0:  # página sin resultados nuevos → fin
             break
-        time.sleep(3)     # rate limiting: 3s entre páginas para evitar 429
+        time.sleep(8)     # rate limiting: 8s entre páginas para evitar 429
 
     return all_jobs
 
@@ -377,7 +406,7 @@ def buscar_trabajos(on_job_found=None):
 
                 # Obtener detalles (descripción, modo trabajo)
                 details = get_job_details(job["id"])
-                time.sleep(2)  # rate limiting: 2s entre llamadas de detalle
+                time.sleep(6)  # rate limiting: 6s entre llamadas de detalle
 
                 # Saltar ofertas cerradas
                 if details.get("closed"):
@@ -404,7 +433,7 @@ def buscar_trabajos(on_job_found=None):
                 if on_job_found:
                     on_job_found(oferta)
 
-        time.sleep(5)  # delay de 5s entre keywords para proteger la IP
+        time.sleep(15)  # delay de 15s entre keywords para proteger la IP
 
     print(f"📦 LinkedIn Guest API: {len(ofertas_totales)} ofertas encontradas en total en este ciclo.")
     return ofertas_totales
@@ -429,8 +458,11 @@ def filtrar_ofertas(ofertas):
         descripcion_low = oferta.get("descripcion", "").lower()
 
         # Excluir por senioridad (excluimos senior, lead, manager, head, etc.)
+        # Excepción: si el título contiene "junior" o "jr", se acepta siempre
+        PALABRAS_JUNIOR = ["junior", "jr", "trainee", "becario", "prácticas", "practicas", "entry", "intern"]
+        es_junior = any(word in titulo_low.split() for word in PALABRAS_JUNIOR)
         es_senior = any(word in titulo_low.split() for word in PALABRAS_PROHIBIDAS)
-        if es_senior:
+        if es_senior and not es_junior:
             print(f"❌ Rechazada (Senioridad): {oferta['titulo']}")
             continue
 
@@ -439,11 +471,12 @@ def filtrar_ofertas(ofertas):
         keywords_limpias = [kw.replace("'", "").lower() for kw in KEYWORDS]
         # Añadimos palabras comodín relacionadas con IT que queremos aceptar pero por las que no queremos buscar en LinkedIn
         keywords_extra = [
-            "cloud security", "seguridad ofensiva", "information security", 
-            "it security", "network security", "seguridad perimetral", 
-            "seguridad de la información", "seguridad it",
-            "security consultant", "security engineer", "security specialist",
-            "security architect"
+            "comunicación", "periodismo", "prensa", "medios",
+            "redacción", "editorial", "publicaciones", "noticias",
+            "radio", "televisión", "podcast", "newsletter",
+            "pr specialist", "media relations", "brand communications",
+            "content creation", "storytelling", "journalist",
+            "news editor", "broadcast journalist"
         ]
         
         tiene_keyword = False
